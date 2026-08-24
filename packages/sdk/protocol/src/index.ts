@@ -26,6 +26,8 @@ export type {
   SessionResumeResult,
   SessionApprovalPolicyParams,
   SessionApprovalPolicyResult,
+  SessionCloseParams,
+  SessionCloseResult,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from './types.ts'

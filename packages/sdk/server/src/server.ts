@@ -26,6 +26,8 @@ import type {
   SessionApprovalPolicyResult,
   SessionCancelParams,
   SessionCancelResult,
+  SessionCloseParams,
+  SessionCloseResult,
   SessionResumeParams,
   SessionResumeResult,
   SessionPromptParams,
@@ -228,6 +230,15 @@ export class HarnessSdkJsonRpcServer {
     return { sessionId: params.sessionId, policy: params.policy }
   }
 
+  /** Dispose one live session without shutting down the runtime process. */
+  async closeSession(params: SessionCloseParams): Promise<SessionCloseResult> {
+    const rec = this.sessions.get(params.sessionId)
+    if (rec === undefined) throw new Error(`unknown SDK session: ${params.sessionId}`)
+    this.sessions.delete(params.sessionId)
+    await rec.handle.dispose()
+    return { sessionId: params.sessionId, closed: true }
+  }
+
   /**
    * Dispose server-owned agents, adapter, and subscriptions to quiescence.
    * The surrounding context remains running.
@@ -285,6 +296,8 @@ export class HarnessSdkJsonRpcServer {
         return this.resume(params as unknown as SessionResumeParams)
       case 'session/approval-policy':
         return this.approvalPolicy(params as unknown as SessionApprovalPolicyParams)
+      case 'session/close':
+        return this.closeSession(params as unknown as SessionCloseParams)
       case 'shutdown':
         return this.shutdown()
       default:

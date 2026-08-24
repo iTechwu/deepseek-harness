@@ -153,6 +153,11 @@ export class HarnessSession {
     return this.harness.client.setApprovalPolicy(this.id, policy)
   }
 
+  /** Dispose this session's agent without closing the runtime process. */
+  close(): Promise<void> {
+    return this.harness.client.closeSession(this.id)
+  }
+
   /**
    * Queue one prompt, then observe the whole session through its next idle.
    * @param input - prompt text, or content blocks sent verbatim.

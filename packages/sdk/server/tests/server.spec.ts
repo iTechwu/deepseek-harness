@@ -251,6 +251,36 @@ describe('HarnessSdkJsonRpcServer', () => {
     await server.shutdown()
   })
 
+  it('closes one live session without shutting down the runtime', async () => {
+    const agent = {
+      id: SessionId('wire-close'),
+      session: { events: [] },
+      followup: vi.fn(),
+      cancel: vi.fn(),
+    } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      get: () => undefined,
+      agents: {
+        create: vi.fn(async () => handle),
+        get: () => agent,
+      },
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
+    await server.prompt({ sessionId: 'wire-close', contentBlocks: [{ type: 'text', text: 'hello' }] })
+
+    await expect(server.closeSession({ sessionId: 'wire-close' }))
+      .resolves.toEqual({ sessionId: 'wire-close', closed: true })
+    expect(handle.dispose).toHaveBeenCalledOnce()
+
+    await expect(server.closeSession({ sessionId: 'wire-close' }))
+      .rejects.toThrow('unknown SDK session: wire-close')
+    await server.shutdown()
+    expect(handle.dispose).toHaveBeenCalledOnce()
+  })
+
   it('rejects a prompt for a session whose agent was disposed outside the server', async () => {
     const followup = vi.fn<Agent['followup']>()
     const agent = ({

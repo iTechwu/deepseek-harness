@@ -20,6 +20,7 @@ import {
   type InitializeResult,
   type SessionApprovalPolicyParams,
   type SessionCancelParams,
+  type SessionCloseParams,
   type SessionResumeParams,
   type SessionPromptParams,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -320,6 +321,14 @@ export class HarnessClient {
     const result = await this.request('session/approval-policy', { sessionId, policy } satisfies SessionApprovalPolicyParams)
     if (!isRecord(result) || result.sessionId !== sessionId || result.policy !== policy) {
       throw new SdkProtocolError(`session/approval-policy returned no policy receipt: ${JSON.stringify(result)}`)
+    }
+  }
+
+  /** Dispose one live session without closing the runtime process. */
+  async closeSession(sessionId: string): Promise<void> {
+    const result = await this.request('session/close', { sessionId } satisfies SessionCloseParams)
+    if (!isRecord(result) || result.sessionId !== sessionId || result.closed !== true) {
+      throw new SdkProtocolError(`session/close returned no close receipt: ${JSON.stringify(result)}`)
     }
   }
 

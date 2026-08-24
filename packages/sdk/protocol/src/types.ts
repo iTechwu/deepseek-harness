@@ -85,6 +85,17 @@ export interface SessionApprovalPolicyResult {
   policy: 'ask' | 'never'
 }
 
+/** Close one live session, disposing its agent and releasing its runtime resources. */
+export interface SessionCloseParams {
+  sessionId: string
+}
+
+/** Result of a session close request. */
+export interface SessionCloseResult {
+  sessionId: string
+  closed: boolean
+}
+
 /** Deployment-mapped SDK outcome: `ok` for an accepted result, `error` otherwise. */
 export type SdkRunStatus = 'ok' | 'error'
 
@@ -145,5 +156,6 @@ export interface HarnessSdkRequestMap {
   'session/cancel': { params: SessionCancelParams; result: SessionCancelResult }
   'session/resume': { params: SessionResumeParams; result: SessionResumeResult }
   'session/approval-policy': { params: SessionApprovalPolicyParams; result: SessionApprovalPolicyResult }
+  'session/close': { params: SessionCloseParams; result: SessionCloseResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

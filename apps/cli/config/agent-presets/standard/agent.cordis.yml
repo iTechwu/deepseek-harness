@@ -250,3 +250,7 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+- id: tool-ci
+  name: '@deepseek-ai/dsh-tool-ci'
+  config:
+    timeoutMs: 120000

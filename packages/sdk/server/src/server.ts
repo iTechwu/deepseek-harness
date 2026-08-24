@@ -45,7 +45,32 @@ interface SessionRecord {
   environment: Readonly<Record<string, string>>
 }
 
-const SESSION_ENVIRONMENT_KEYS = new Set(['DEEPSEEK_BASE_URL'])
+// Task-scoped environment is isolated per session by overlay. The SDK runtime
+// is driven only by the trusted harness host, so the per-session overlay may
+// carry task-scoped Skill/credential/gateway values; it still rejects the
+// loader/interpreter-injection keys that could change how the runtime itself
+// executes (mirrors the host's `stripDeepSeekJsonRpcUnsafeEnvironment`).
+const SESSION_ENVIRONMENT_DENY_KEYS = new Set([
+  'BASH_ENV',
+  'ENV',
+  'GCONV_PATH',
+  'JAVA_TOOL_OPTIONS',
+  'JDK_JAVA_OPTIONS',
+  'LD_AUDIT',
+  'LD_LIBRARY_PATH',
+  'LD_PRELOAD',
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'PERL5LIB',
+  'PERL5OPT',
+  'PYTHONHOME',
+  'PYTHONPATH',
+  'PYTHONSTARTUP',
+  'RUBYLIB',
+  'RUBYOPT',
+  'ZDOTDIR',
+  '_JAVA_OPTIONS',
+])
 const SESSION_ENVIRONMENT_VALUE_LIMIT = 2048
 
 function normalizeSessionEnvironment(value: unknown): Readonly<Record<string, string>> {
@@ -55,7 +80,8 @@ function normalizeSessionEnvironment(value: unknown): Readonly<Record<string, st
   }
   const result: Record<string, string> = {}
   for (const [name, raw] of Object.entries(value)) {
-    if (!SESSION_ENVIRONMENT_KEYS.has(name)) {
+    const normalized = name.toUpperCase()
+    if (SESSION_ENVIRONMENT_DENY_KEYS.has(normalized) || normalized.startsWith('DYLD_')) {
       throw new Error(`session environment variable is not allowed: ${name}`)
     }
     if (typeof raw !== 'string' || raw.length === 0 || raw.length > SESSION_ENVIRONMENT_VALUE_LIMIT) {

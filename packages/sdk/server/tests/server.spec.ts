@@ -395,6 +395,31 @@ describe('HarnessSdkJsonRpcServer', () => {
     await server.shutdown()
   })
 
+  it('allows task-scoped session environment and rejects injection keys', async () => {
+    const agent = { id: SessionId('env-scope'), session: { events: [] }, followup: vi.fn(), cancel: vi.fn() } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      get: () => undefined,
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+
+    await expect(server.prompt({
+      sessionId: 'env-scope',
+      contentBlocks: [{ type: 'text', text: 'hello' }],
+      environment: { DEEPSEEK_API_KEY: 'task-key', DEEPSEEK_BASE_URL: 'https://gw/v1', MY_SKILL_TOKEN: 'skill-secret' },
+    })).resolves.toMatchObject({ messageId: expect.any(String) })
+
+    await expect(server.prompt({
+      sessionId: 'env-inject',
+      contentBlocks: [{ type: 'text', text: 'hello' }],
+      environment: { LD_PRELOAD: '/evil.so' },
+    })).rejects.toThrow('session environment variable is not allowed: LD_PRELOAD')
+
+    await server.shutdown()
+  })
+
   it('rejects an approval response for an unknown approval id', async () => {
     const ctx = {
       on: vi.fn(() => () => undefined),

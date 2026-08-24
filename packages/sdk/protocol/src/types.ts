@@ -40,7 +40,7 @@ export interface SessionPromptParams {
   sessionId: string
   /** The prompt content blocks, sent verbatim as the user message. */
   contentBlocks: ContentBlock[]
-  /** Optional non-secret session environment overlay. The server validates the allowlist. */
+  /** Optional task-scoped session environment overlay. The server rejects loader/interpreter-injection keys (deny-list). */
   environment?: Readonly<Record<string, string>>
 }
 

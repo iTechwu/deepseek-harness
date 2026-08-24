@@ -42,6 +42,8 @@ export interface SessionPromptParams {
   contentBlocks: ContentBlock[]
   /** Optional task-scoped session environment overlay. The server rejects loader/interpreter-injection keys (deny-list). */
   environment?: Readonly<Record<string, string>>
+  /** Optional per-session working directory (absolute). Defaults to the initialize cwd; immutable after session creation. */
+  cwd?: string
 }
 
 /** Durable enqueue receipt for one prompt. */

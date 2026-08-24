@@ -1049,25 +1049,25 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport()) as unknown as {
-      getOrCreateSession(sessionId: string): Promise<{ handle: AgentHandle }>
+      getOrCreateSession(sessionId: string, environment?: Readonly<Record<string, string>>, cwd?: string): Promise<{ handle: AgentHandle }>
       shutdown(): Promise<Record<string, never>>
     }
 
-    const first = server.getOrCreateSession('shared')
-    const second = server.getOrCreateSession('shared')
+    const first = server.getOrCreateSession('shared', {}, '/tmp')
+    const second = server.getOrCreateSession('shared', {}, '/tmp')
     expect(create).toHaveBeenCalledTimes(1)
     resolveShared?.(sharedHandle)
     const [firstRecord, secondRecord] = await Promise.all([first, second])
     expect(firstRecord).toBe(secondRecord)
 
-    await expect(server.getOrCreateSession('retry')).rejects.toThrow('creation failed')
-    await expect(server.getOrCreateSession('retry')).resolves.toMatchObject({ handle: retryHandle })
+    await expect(server.getOrCreateSession('retry', {}, '/tmp')).rejects.toThrow('creation failed')
+    await expect(server.getOrCreateSession('retry', {}, '/tmp')).resolves.toMatchObject({ handle: retryHandle })
     expect(create).toHaveBeenCalledTimes(3)
 
     await server.shutdown()
     expect(sharedHandle.dispose).toHaveBeenCalledOnce()
     expect(retryHandle.dispose).toHaveBeenCalledOnce()
-    await expect(server.getOrCreateSession('after-shutdown')).rejects.toThrow('SDK server is shutting down')
+    await expect(server.getOrCreateSession('after-shutdown', {}, '/tmp')).rejects.toThrow('SDK server is shutting down')
   })
 
   it('resolves a relative cwd before creating the session', async () => {
@@ -1080,17 +1080,37 @@ describe('HarnessSdkJsonRpcServer', () => {
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport()) as unknown as {
       initialize(params: { cwd: string; provider: string; model: string; maxTokens?: number }): Promise<unknown>
-      getOrCreateSession(sessionId: string): Promise<unknown>
+      getOrCreateSession(sessionId: string, environment?: Readonly<Record<string, string>>, cwd?: string): Promise<unknown>
       shutdown(): Promise<Record<string, never>>
     }
 
     await server.initialize({ cwd: '.', provider: 'mock', model: 'model', maxTokens: 123 })
-    await server.getOrCreateSession('relative')
+    await server.getOrCreateSession('relative', {}, process.cwd())
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       meta: { cwd: process.cwd() },
       agentOptions: { provider: 'mock', model: 'model', maxTokens: 123 },
     }))
+    await server.shutdown()
+  })
+
+  it('isolates a per-session cwd and keeps it immutable', async () => {
+    const handle = { agent: { id: SessionId('cwd-session'), session: { events: [] }, followup: vi.fn() } as unknown as Agent, dispose: vi.fn(() => Promise.resolve()) }
+    const create = vi.fn(async () => handle)
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create, get: () => handle.agent },
+      get: () => ({ listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek' }] }),
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    await server.initialize({ cwd: '/base', provider: 'deepseek-official', model: 'model' })
+
+    await server.prompt({ sessionId: 'cwd-session', contentBlocks: [{ type: 'text', text: 'hi' }], cwd: '/work/a' })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: '/work/a' } }))
+
+    await expect(server.prompt({ sessionId: 'cwd-session', contentBlocks: [{ type: 'text', text: 'again' }], cwd: '/work/b' }))
+      .rejects.toThrow('session cwd is immutable after creation: cwd-session')
+
     await server.shutdown()
   })
 

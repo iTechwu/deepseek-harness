@@ -43,6 +43,7 @@ import type {
 interface SessionRecord {
   handle: AgentHandle
   environment: Readonly<Record<string, string>>
+  cwd: string
 }
 
 // Task-scoped environment is isolated per session by overlay. The SDK runtime
@@ -96,6 +97,14 @@ function sameEnvironment(a: Readonly<Record<string, string>>, b: Readonly<Record
   const aKeys = Object.keys(a)
   const bKeys = Object.keys(b)
   return aKeys.length === bKeys.length && aKeys.every(key => a[key] === b[key])
+}
+
+function normalizeSessionCwd(value: unknown, fallback: string): string {
+  if (value === undefined) return fallback
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError('session cwd must be a non-empty string')
+  }
+  return resolve(value)
 }
 
 interface PendingApproval {
@@ -274,7 +283,8 @@ export class HarnessSdkJsonRpcServer {
    */
   async prompt(params: SessionPromptParams): Promise<SessionPromptResult> {
     const environment = normalizeSessionEnvironment(params.environment)
-    const rec = await this.getOrCreateSession(params.sessionId, environment)
+    const cwd = normalizeSessionCwd(params.cwd, this.cwd)
+    const rec = await this.getOrCreateSession(params.sessionId, environment, cwd)
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
     // record against the live registry before delivery (as the ACP bridge does).
@@ -316,7 +326,7 @@ export class HarnessSdkJsonRpcServer {
         }
       },
     })
-    this.sessions.set(params.sessionId, { handle, environment: {} })
+    this.sessions.set(params.sessionId, { handle, environment: {}, cwd: String(handle.agent.session.header.cwd ?? this.cwd) })
     return { sessionId: params.sessionId, resumed: true }
   }
 
@@ -415,18 +425,21 @@ export class HarnessSdkJsonRpcServer {
     }
   }
 
-  private async getOrCreateSession(sessionId: string, environment: Readonly<Record<string, string>>): Promise<SessionRecord> {
+  private async getOrCreateSession(sessionId: string, environment: Readonly<Record<string, string>>, cwd: string): Promise<SessionRecord> {
     if (this.shuttingDown) throw new Error('SDK server is shutting down')
     const existing = this.sessions.get(sessionId)
     if (existing) {
       if (!sameEnvironment(existing.environment, environment)) {
         throw new Error(`session environment is immutable after creation: ${sessionId}`)
       }
+      if (existing.cwd !== cwd) {
+        throw new Error(`session cwd is immutable after creation: ${sessionId}`)
+      }
       return existing
     }
     const pending = this.sessionCreations.get(sessionId)
     if (pending) return pending
-    const creation = this.createSession(sessionId, environment)
+    const creation = this.createSession(sessionId, environment, cwd)
     this.sessionCreations.set(sessionId, creation)
     void creation.then(
       () => { this.sessionCreations.delete(sessionId) },
@@ -435,14 +448,14 @@ export class HarnessSdkJsonRpcServer {
     return creation
   }
 
-  private async createSession(sessionId: string, environment: Readonly<Record<string, string>>): Promise<SessionRecord> {
+  private async createSession(sessionId: string, environment: Readonly<Record<string, string>>, cwd: string): Promise<SessionRecord> {
     // No preset composition: this server's compositions keep the model-facing
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(sessionId),
-      meta: { cwd: this.cwd },
+      meta: { cwd },
       agentOptions: {
         provider: this.provider,
         model: this.model,
@@ -461,7 +474,7 @@ export class HarnessSdkJsonRpcServer {
         }
       },
     })
-    const rec: SessionRecord = { handle, environment }
+    const rec: SessionRecord = { handle, environment, cwd }
     this.sessions.set(sessionId, rec)
     return rec
   }

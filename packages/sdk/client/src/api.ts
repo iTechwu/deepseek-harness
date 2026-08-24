@@ -158,6 +158,11 @@ export class HarnessSession {
     return this.harness.client.closeSession(this.id)
   }
 
+  /** Answer one pending approval question for this session. */
+  respondApproval(approvalId: string, outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'): Promise<void> {
+    return this.harness.client.respondApproval({ sessionId: this.id, approvalId, outcome })
+  }
+
   /**
    * Queue one prompt, then observe the whole session through its next idle.
    * @param input - prompt text, or content blocks sent verbatim.

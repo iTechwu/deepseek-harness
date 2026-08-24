@@ -21,6 +21,7 @@ import {
   type SessionApprovalPolicyParams,
   type SessionCancelParams,
   type SessionCloseParams,
+  type ApprovalRespondParams,
   type SessionResumeParams,
   type SessionPromptParams,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -329,6 +330,17 @@ export class HarnessClient {
     const result = await this.request('session/close', { sessionId } satisfies SessionCloseParams)
     if (!isRecord(result) || result.sessionId !== sessionId || result.closed !== true) {
       throw new SdkProtocolError(`session/close returned no close receipt: ${JSON.stringify(result)}`)
+    }
+  }
+
+  /** Answer one pending approval question. */
+  async respondApproval(params: ApprovalRespondParams): Promise<void> {
+    const result = await this.request('approval/respond', { ...params })
+    if (!isRecord(result)
+      || result.sessionId !== params.sessionId
+      || result.approvalId !== params.approvalId
+      || result.outcome !== params.outcome) {
+      throw new SdkProtocolError(`approval/respond returned no response receipt: ${JSON.stringify(result)}`)
     }
   }
 

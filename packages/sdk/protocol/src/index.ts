@@ -18,6 +18,7 @@ export type {
   SdkRunStatus,
   SessionEventNotification,
   SessionStatusNotification,
+  SessionCancelledNotification,
   SessionPromptParams,
   SessionPromptResult,
   SessionCancelParams,
@@ -28,6 +29,9 @@ export type {
   SessionApprovalPolicyResult,
   SessionCloseParams,
   SessionCloseResult,
+  ApprovalRequestNotification,
+  ApprovalRespondParams,
+  ApprovalRespondResult,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from './types.ts'

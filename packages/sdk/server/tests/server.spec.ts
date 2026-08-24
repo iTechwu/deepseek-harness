@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
 
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
@@ -336,6 +337,74 @@ describe('HarnessSdkJsonRpcServer', () => {
       ])
     await server.shutdown()
     await ctx.fiber.dispose()
+  })
+
+  it('emits session.cancelled when a turn ends aborted', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    const session = ctx.sessions.create(SessionId('cancelled-turn'))
+
+    ctx.emit('session/event', session, { type: 'turn/end', seq: 0, time: 0, data: { turn: 3, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'operator' } } } } as SessionEvent)
+
+    expect(transport.notifications).toContainEqual({
+      method: 'session.cancelled',
+      params: { sessionId: 'cancelled-turn', turn: 3, cause: 'hook', hookReason: 'operator' },
+    })
+    await server.shutdown()
+    await ctx.fiber.dispose()
+  })
+
+  it('bridges an SDK-owned approval ask to the host and answers it', async () => {
+    const captured = new Map<string, (...args: never[]) => unknown>()
+    const agent = {
+      id: SessionId('approval-bridge'),
+      session: { id: SessionId('approval-bridge'), events: [{ type: 'approval/asked', seq: 0, time: 0, data: { id: 'ask-1', toolName: 'bash' } }] },
+      followup: vi.fn(),
+      cancel: vi.fn(),
+    } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn((name: string, handler: (...args: never[]) => unknown) => {
+        captured.set(name, handler)
+        return () => undefined
+      }),
+      get: () => undefined,
+      agents: {
+        create: vi.fn(async () => handle),
+        get: () => agent,
+      },
+    } as unknown as Context
+    const transport = new FakeTransport()
+    const server = new HarnessSdkJsonRpcServer(ctx, transport)
+    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
+    await server.prompt({ sessionId: 'approval-bridge', contentBlocks: [{ type: 'text', text: 'hello' }] })
+
+    const answerer = captured.get('approval/request') as ((req: { agent: Agent; toolName: string; callId?: string; reason?: string; signal?: AbortSignal }, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>) | undefined
+    expect(answerer).toBeTypeOf('function')
+    const outcome = answerer!({ agent, toolName: 'bash' }, () => Promise.resolve('unavailable' as const))
+
+    expect(transport.notifications).toContainEqual({
+      method: 'approval.request',
+      params: { sessionId: 'approval-bridge', approvalId: 'ask-1', toolName: 'bash' },
+    })
+    server.approvalRespond({ sessionId: 'approval-bridge', approvalId: 'ask-1', outcome: 'allowed-once' })
+    await expect(outcome).resolves.toBe('allowed-once')
+    await server.shutdown()
+  })
+
+  it('rejects an approval response for an unknown approval id', async () => {
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      get: () => undefined,
+      agents: { create: vi.fn(), get: () => undefined },
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    expect(() => server.approvalRespond({ sessionId: 'nope', approvalId: 'missing', outcome: 'rejected' }))
+      .toThrow('unknown approval: missing')
+    await server.shutdown()
   })
 
   it('notifies the host when a child session is created with parent lineage', async () => {
@@ -1035,6 +1104,6 @@ describe('HarnessSdkJsonRpcServer', () => {
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
 
     await expect(server.shutdown()).rejects.toBe(listenerFailure)
-    expect(on).toHaveBeenCalledTimes(4)
+    expect(on).toHaveBeenCalledTimes(5)
   })
 })

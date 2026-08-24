@@ -96,6 +96,46 @@ export interface SessionCloseResult {
   closed: boolean
 }
 
+/** `session.cancelled` payload: a turn ended because a cancellation was applied. */
+export interface SessionCancelledNotification {
+  /** Session whose turn was cancelled. */
+  sessionId: string
+  /** The turn number that was closed by the cancellation. */
+  turn: number
+  /** The cancellation cause kind, flattened from the durable turn-end reason. */
+  cause: 'user' | 'parent' | 'hook' | 'disposed' | 'legacy'
+  /** Present only when `cause === 'hook'`; the hook-supplied reason. */
+  hookReason?: string
+}
+
+/** `approval.request` payload: one pending approval question for the host to answer. */
+export interface ApprovalRequestNotification {
+  /** Session whose live turn asked for approval. */
+  sessionId: string
+  /** Durable id pairing this ask with its `approval/decided` audit event. */
+  approvalId: string
+  /** The tool the question is about. */
+  toolName: string
+  /** The exact tool call being decided, when the asker has one. */
+  callId?: string
+  /** The asker's human-readable explanation of why it is asking. */
+  reason?: string
+}
+
+/** Answer one pending approval question. */
+export interface ApprovalRespondParams {
+  sessionId: string
+  approvalId: string
+  outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+}
+
+/** Result of an approval response. */
+export interface ApprovalRespondResult {
+  sessionId: string
+  approvalId: string
+  outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+}
+
 /** Deployment-mapped SDK outcome: `ok` for an accepted result, `error` otherwise. */
 export type SdkRunStatus = 'ok' | 'error'
 
@@ -145,6 +185,8 @@ export interface SubagentFinishedNotification {
 export interface HarnessSdkNotificationMap {
   'session.event': SessionEventNotification
   'session.status': SessionStatusNotification
+  'session.cancelled': SessionCancelledNotification
+  'approval.request': ApprovalRequestNotification
   'subagent.started': SubagentStartedNotification
   'subagent.finished': SubagentFinishedNotification
 }
@@ -157,5 +199,6 @@ export interface HarnessSdkRequestMap {
   'session/resume': { params: SessionResumeParams; result: SessionResumeResult }
   'session/approval-policy': { params: SessionApprovalPolicyParams; result: SessionApprovalPolicyResult }
   'session/close': { params: SessionCloseParams; result: SessionCloseResult }
+  'approval/respond': { params: ApprovalRespondParams; result: ApprovalRespondResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

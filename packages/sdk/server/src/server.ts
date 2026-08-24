@@ -9,11 +9,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { AgentCancelCause } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type CallId } from '@deepseek-ai/dsh-llm'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
-import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import { setApprovalPolicy, type ApprovalOutcome, type ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
@@ -22,6 +22,10 @@ import type {
   InitializeResult,
   JsonRpcTransportPeer,
   SessionEventNotification,
+  SessionCancelledNotification,
+  ApprovalRequestNotification,
+  ApprovalRespondParams,
+  ApprovalRespondResult,
   SessionApprovalPolicyParams,
   SessionApprovalPolicyResult,
   SessionCancelParams,
@@ -68,6 +72,32 @@ function sameEnvironment(a: Readonly<Record<string, string>>, b: Readonly<Record
   return aKeys.length === bKeys.length && aKeys.every(key => a[key] === b[key])
 }
 
+interface PendingApproval {
+  sessionId: string
+  approvalId: ApprovalRequestId
+  settle: (outcome: ApprovalOutcome) => void
+}
+
+/** Find the newest undecided, unclaimed `approval/asked` id for one ask. */
+function findApprovalId(
+  events: readonly SessionEvent[],
+  callId: CallId | undefined,
+  claimed: ReadonlySet<string>,
+): ApprovalRequestId | undefined {
+  const decided = new Set<ApprovalRequestId>()
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i] as SessionEvent
+    if (event.type === 'approval/decided') {
+      decided.add(event.data.id)
+    } else if (event.type === 'approval/asked') {
+      if (decided.has(event.data.id) || claimed.has(String(event.data.id))) continue
+      if ((callId ?? null) !== (event.data.callId ?? null)) continue
+      return event.data.id
+    }
+  }
+  return undefined
+}
+
 /** Recover the delegating parent from the service-owned scoped carrier. */
 function subagentParentOf(carrier: Scoped<SubagentRuntime>): Agent {
   return carrierKeyOf(carrier) as Agent
@@ -97,6 +127,7 @@ export class HarnessSdkJsonRpcServer {
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
+  private readonly pendingApprovals = new Map<string, PendingApproval>()
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
@@ -110,6 +141,16 @@ export class HarnessSdkJsonRpcServer {
     this.disposers.push(ctx.on('session/event', (session, event) => {
       const payload: SessionEventNotification = { sessionId: String(session.id), event }
       this.transport.notify('session.event', payload)
+      if (event.type === 'turn/end' && event.data.reason.kind === 'aborted') {
+        const cause = event.data.reason.reason
+        const cancelled: SessionCancelledNotification = {
+          sessionId: String(session.id),
+          turn: event.data.turn,
+          cause: cause.kind === 'hook' ? 'hook' : cause.kind,
+          ...(cause.kind === 'hook' ? { hookReason: cause.reason } : {}),
+        }
+        this.transport.notify('session.cancelled', cancelled)
+      }
     }))
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
@@ -139,6 +180,37 @@ export class HarnessSdkJsonRpcServer {
         ...(info.lastAssistantMessage === undefined ? {} : { lastAssistantMessage: info.lastAssistantMessage }),
       }
       transport.notify('subagent.finished', payload)
+    }))
+    this.disposers.push(ctx.on('approval/request', (req, next) => {
+      // Bridge only SDK-owned sessions; foreign asks delegate to the answerer chain.
+      const sessionId = String(req.agent.session.id)
+      if (!this.sessions.has(sessionId)) return next()
+      if (req.signal?.aborted === true) return Promise.resolve<ApprovalOutcome>('cancelled')
+      const claimed = new Set<string>()
+      for (const key of this.pendingApprovals.keys()) claimed.add(key)
+      const approvalId = findApprovalId(req.agent.session.events, req.callId, claimed)
+      if (approvalId === undefined) return next()
+      const key = String(approvalId)
+      this.transport.notify('approval.request', {
+        sessionId,
+        approvalId: key,
+        toolName: req.toolName,
+        ...(req.callId === undefined ? {} : { callId: req.callId }),
+        ...(req.reason === undefined ? {} : { reason: req.reason }),
+      } satisfies ApprovalRequestNotification)
+      return new Promise<ApprovalOutcome>((resolve) => {
+        let settled = false
+        const onAbort = (): void => { settle('cancelled') }
+        const settle = (outcome: ApprovalOutcome): void => {
+          if (settled) return
+          settled = true
+          this.pendingApprovals.delete(key)
+          req.signal?.removeEventListener('abort', onAbort)
+          resolve(outcome)
+        }
+        req.signal?.addEventListener('abort', onAbort, { once: true })
+        this.pendingApprovals.set(key, { sessionId, approvalId, settle })
+      })
     }))
   }
 
@@ -239,6 +311,14 @@ export class HarnessSdkJsonRpcServer {
     return { sessionId: params.sessionId, closed: true }
   }
 
+  /** Resolve one pending approval question with the host's outcome. */
+  approvalRespond(params: ApprovalRespondParams): ApprovalRespondResult {
+    const pending = this.pendingApprovals.get(params.approvalId)
+    if (pending === undefined) throw new Error(`unknown approval: ${params.approvalId}`)
+    pending.settle(params.outcome)
+    return { sessionId: params.sessionId, approvalId: params.approvalId, outcome: params.outcome }
+  }
+
   /**
    * Dispose server-owned agents, adapter, and subscriptions to quiescence.
    * The surrounding context remains running.
@@ -251,6 +331,8 @@ export class HarnessSdkJsonRpcServer {
 
   private async performShutdown(): Promise<Record<string, never>> {
     this.shuttingDown = true
+    for (const pending of [...this.pendingApprovals.values()]) pending.settle('cancelled')
+    this.pendingApprovals.clear()
     const pendingCreations = [...this.sessionCreations.values()]
     await Promise.allSettled(pendingCreations)
     this.sessionCreations.clear()
@@ -298,6 +380,8 @@ export class HarnessSdkJsonRpcServer {
         return this.approvalPolicy(params as unknown as SessionApprovalPolicyParams)
       case 'session/close':
         return this.closeSession(params as unknown as SessionCloseParams)
+      case 'approval/respond':
+        return this.approvalRespond(params as unknown as ApprovalRespondParams)
       case 'shutdown':
         return this.shutdown()
       default:

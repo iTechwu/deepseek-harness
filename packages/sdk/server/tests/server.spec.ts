@@ -109,6 +109,17 @@ async function settleSubagent(
 }
 
 describe('HarnessSdkJsonRpcServer', () => {
+  it('rejects an initialize request without a supported protocol version', async () => {
+    const ctx = await makeHarness(await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-version-')))
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    await expect(server.initialize({
+      cwd: '.',
+      provider: 'deepseek-official',
+      model: 'model',
+      protocolVersions: ['9.9'],
+    })).rejects.toThrow('does not support any requested protocol version')
+  })
+
   it('creates a harness agent and calls the configured OpenAI-compatible endpoint', { timeout: 15_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-'))
     const llmServer = await mockCompletionServer()

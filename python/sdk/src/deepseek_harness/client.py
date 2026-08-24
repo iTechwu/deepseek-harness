@@ -130,6 +130,7 @@ class HarnessClient:
         provider: str,
         model: str,
         max_tokens: int | None = None,
+        protocol_versions: list[str] | None = None,
     ) -> InitializeResponse:
         payload: JsonObject = {
             "cwd": str(Path(cwd).resolve()),
@@ -138,8 +139,13 @@ class HarnessClient:
         }
         if max_tokens is not None:
             payload["maxTokens"] = max_tokens
+        if protocol_versions is not None:
+            payload["protocolVersions"] = protocol_versions
         try:
-            return self.request("initialize", payload, response_model=InitializeResponse)
+            response = self.request("initialize", payload, response_model=InitializeResponse)
+            if protocol_versions is not None and response.protocolVersion != "2.0":
+                raise TypeError(f"initialize did not negotiate protocol 2.0: {response.model_dump_json()}")
+            return response
         except BaseException:
             self.close()
             raise

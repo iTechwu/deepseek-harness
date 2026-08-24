@@ -146,6 +146,10 @@ export class HarnessSdkJsonRpcServer {
    * @returns server identity for the handshake.
    */
   async initialize(params: InitializeParams): Promise<InitializeResult> {
+    if (params.protocolVersions !== undefined
+      && (!Array.isArray(params.protocolVersions) || !params.protocolVersions.includes('2.0'))) {
+      throw new TypeError('initialize does not support any requested protocol version')
+    }
     if (params.maxTokens !== undefined
       && (!Number.isSafeInteger(params.maxTokens) || params.maxTokens <= 0)) {
       throw new TypeError('initialize maxTokens must be a positive safe integer')
@@ -157,7 +161,10 @@ export class HarnessSdkJsonRpcServer {
     if (!this.hasAdapterFor(this.provider) && this.provider !== 'deepseek-official') {
       throw new Error(`no adapter registered for provider "${this.provider}"`)
     }
-    return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
+    return {
+      serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+      ...(params.protocolVersions ? { protocolVersion: '2.0' } : {}),
+    }
   }
 
   /**

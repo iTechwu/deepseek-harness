@@ -22,12 +22,16 @@ export interface InitializeParams {
   model: string
   /** Optional positive output-token cap inherited by SDK-created agents and their in-process descendants. */
   maxTokens?: number
+  /** Optional protocol versions supported by the caller, in preference order. */
+  protocolVersions?: readonly string[]
 }
 
 /** Wire-stable server identity returned by initialization. */
 export interface InitializeResult {
   /** Wire-stable server identity (`deepseek-harness-sdk-runtime`) and version. */
   serverInfo: { name: string; version: string }
+  /** Version selected from `protocolVersions`, when the caller supplied one. */
+  protocolVersion?: string
 }
 
 /** One user turn on one SDK session. */

@@ -274,7 +274,13 @@ export class HarnessClient {
       || typeof result.serverInfo.name !== 'string' || typeof result.serverInfo.version !== 'string') {
       throw new SdkProtocolError(`initialize returned no server identity: ${JSON.stringify(result)}`)
     }
-    return { serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version } }
+    if (params.protocolVersions !== undefined && result.protocolVersion !== '2.0') {
+      throw new SdkProtocolError(`initialize did not negotiate protocol 2.0: ${JSON.stringify(result)}`)
+    }
+    return {
+      serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
+      ...(typeof result.protocolVersion === 'string' ? { protocolVersion: result.protocolVersion } : {}),
+    }
   }
 
   /**

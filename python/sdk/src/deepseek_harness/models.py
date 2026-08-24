@@ -30,6 +30,7 @@ class ServerInfo(BaseModel):
 
 class InitializeResponse(BaseModel):
     serverInfo: ServerInfo | None = None
+    protocolVersion: str | None = None
 
 
 class SessionCancelResponse(BaseModel):

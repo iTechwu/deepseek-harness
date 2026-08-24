@@ -461,7 +461,10 @@ for line in sys.stdin:
     msg = json.loads(line)
     method = msg.get("method")
     if method == "initialize":
-        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+        result = {"serverInfo": {"name": "fake-dsh"}}
+        if (msg.get("params") or {}).get("protocolVersions"):
+            result["protocolVersion"] = "2.0"
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
     elif method == "session/prompt":
         params = msg.get("params") or {}
         print(json.dumps({"jsonrpc": "2.0", "method": "llm/request", "params": {"requestId": "req-1", "sessionId": params["sessionId"], "model": "dsagent", "messages": []}}), flush=True)
@@ -500,7 +503,10 @@ for line in sys.stdin:
     seen.append(msg)
     method = msg.get("method")
     if method == "initialize":
-        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+        result = {"serverInfo": {"name": "fake-dsh"}}
+        if (msg.get("params") or {}).get("protocolVersions"):
+            result["protocolVersion"] = "2.0"
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
     elif method == "session/prompt":
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
     elif method == "session/cancel":
@@ -519,7 +525,13 @@ for line in sys.stdin:
     with HarnessClient(
         HarnessConfig(launch_args_override=(sys.executable, str(script)), env={"SEEN": str(seen)})
     ) as client:
-        client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+        identity = client.initialize(
+            provider="deepseek-official",
+            cwd="/workspace",
+            model="dsagent",
+            protocol_versions=["2.0"],
+        )
+        assert identity.protocolVersion == "2.0"
         assert client.session_prompt(
             "main",
             [{"type": "text", "text": "fix it"}],

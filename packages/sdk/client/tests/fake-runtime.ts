@@ -171,7 +171,7 @@ reader.on('line', (line) => {
         const poll = setInterval(() => {
           if (!existsSync(go)) return
           clearInterval(poll)
-          write({ jsonrpc: '2.0', id, result: { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } } })
+          write({ jsonrpc: '2.0', id, result: { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' }, ...(frame.params?.protocolVersions ? { protocolVersion: '2.0' } : {}) } })
         }, 5)
         return
       }
@@ -189,10 +189,10 @@ reader.on('line', (line) => {
         return
       }
       if (env.FAKE_ECHO_CWD_IN_INIT !== undefined) {
-        respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: process.cwd() } })
+        respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: process.cwd() }, ...(frame.params?.protocolVersions ? { protocolVersion: '2.0' } : {}) })
         return
       }
-      respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } })
+      respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' }, ...(frame.params?.protocolVersions ? { protocolVersion: '2.0' } : {}) })
       return
     case 'session/prompt': {
       if (env.FAKE_RECORD_PROMPT !== undefined) appendFileSync(env.FAKE_RECORD_PROMPT, `${JSON.stringify(frame.params)}\n`)

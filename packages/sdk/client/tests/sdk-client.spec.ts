@@ -196,6 +196,19 @@ describe('DeepSeekHarness', () => {
     expect(records).toEqual([resolvePath(relativeCwd), inner])
   })
 
+  it('negotiates the requested JSON-RPC protocol version', async () => {
+    const harness = harnessWith()
+    cleanups.push(() => harness.close())
+    await harness.start()
+    const identity = await harness.client.initialize({
+      cwd: process.cwd(),
+      provider: 'p',
+      model: 'm',
+      protocolVersions: ['2.0'],
+    })
+    expect(identity.protocolVersion).toBe('2.0')
+  })
+
   it('propagates a JSON-RPC error response from initialize and closes the runtime', async () => {
     const harness = harnessWith({ FAKE_INIT_ERROR: '1' })
     const failure = await harness.run('boom').then(

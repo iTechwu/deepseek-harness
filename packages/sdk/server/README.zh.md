@@ -22,6 +22,8 @@ Stdout 只承载 JSON-RPC 帧。部署不得组合 stdout logger；诊断应写�
 
 ## 协议说明
 
+需要稳定 wire 合约的客户端应在 `initialize` 中携带 `protocolVersions: ["2.0"]`；服务器返回 `protocolVersion: "2.0"`，否则拒绝握手。省略该字段可兼容旧客户端。
+
 `initialize` 是运行时就绪边界：服务器由 Loader 组合挂载时，会等待当前插件树完成所有加载任务后再响应，因此首次提示词能够看到 MCP 初始工具发现等异步同级能力。没有 Loader 的手工组装上下文仍可立即使用。`initialize.serverInfo.name` 的协议稳定值为 `deepseek-harness-sdk-runtime`。可选的正整数 `initialize.maxTokens` 会成为每个 SDK 创建的 agent 及其进程内后代的请求输出上限；非法值会使初始化失败，省略时则不发送 SDK 上限，并应用所选适配器或提供方路由的默认值。`session/prompt` 将一条带标识的用户消息排入队列，并立即返回 `{ messageId }`；可选环境在会话创建后不可变，目前只允许 `DEEPSEEK_BASE_URL`，凭据和动态加载变量会被排除。`session/cancel` 取消活动 agent 但保留进程，`session/resume` 使用持久化 agent factory，`session/approval-policy` 追加持久化策略事件。服务器将每个持久事实作为 `session.event` 流式发出，并将整个 agent 生命周期的每次状态转换作为 `session.status` 发出；它不会把某条助手消息或 `turn/end` 归属于该提示词。同一会话上的独立请求可以继续排入更多工作。持久化根目录和 persona 由 `cordis.yml` 提供。
 
 ## 模型体验

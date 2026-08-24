@@ -10,12 +10,21 @@ import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, TypeAlias, TypeVar
+from typing import Callable, Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 
 from .errors import JsonRpcError, TransportClosedError
-from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification
+from .models import (
+    IncomingRequest,
+    InitializeResponse,
+    JsonObject,
+    JsonValue,
+    Notification,
+    SessionApprovalPolicyResponse,
+    SessionCancelResponse,
+    SessionResumeResponse,
+)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 NotificationFilter: TypeAlias = Callable[[Notification], bool]
@@ -140,10 +149,13 @@ class HarnessClient:
         session_id: str,
         content_blocks: list[JsonObject],
         *,
+        environment: dict[str, str] | None = None,
         on_notification: Callable[[Notification], None] | None = None,
         notification_subscription: "NotificationSubscription | None" = None,
     ) -> str:
         payload: JsonObject = {"sessionId": session_id, "contentBlocks": content_blocks}
+        if environment is not None:
+            payload["environment"] = environment
         response = self.request(
             "session/prompt",
             payload,
@@ -153,6 +165,40 @@ class HarnessClient:
             notification_subscription=notification_subscription,
         )
         return response.messageId
+
+    def session_cancel(
+        self,
+        session_id: str,
+        *,
+        reason: Literal["user", "timeout", "parent", "operator"] | None = None,
+        keep_inbox: bool | None = None,
+    ) -> bool:
+        payload: JsonObject = {"sessionId": session_id}
+        if reason is not None:
+            payload["reason"] = reason
+        if keep_inbox is not None:
+            payload["keepInbox"] = keep_inbox
+        response = self.request("session/cancel", payload, response_model=SessionCancelResponse)
+        return response.cancelled
+
+    def session_resume(self, session_id: str) -> bool:
+        response = self.request(
+            "session/resume",
+            {"sessionId": session_id},
+            response_model=SessionResumeResponse,
+        )
+        if response.sessionId != session_id or not response.resumed:
+            raise TypeError("session/resume response did not confirm the requested session")
+        return True
+
+    def session_approval_policy(self, session_id: str, policy: Literal["ask", "never"]) -> None:
+        response = self.request(
+            "session/approval-policy",
+            {"sessionId": session_id, "policy": policy},
+            response_model=SessionApprovalPolicyResponse,
+        )
+        if response.sessionId != session_id or response.policy != policy:
+            raise TypeError("session/approval-policy response did not confirm the requested policy")
 
     def request(
         self,

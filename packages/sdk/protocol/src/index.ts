@@ -20,6 +20,12 @@ export type {
   SessionStatusNotification,
   SessionPromptParams,
   SessionPromptResult,
+  SessionCancelParams,
+  SessionCancelResult,
+  SessionResumeParams,
+  SessionResumeResult,
+  SessionApprovalPolicyParams,
+  SessionApprovalPolicyResult,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from './types.ts'

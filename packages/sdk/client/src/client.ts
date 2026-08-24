@@ -18,6 +18,9 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
+  type SessionApprovalPolicyParams,
+  type SessionCancelParams,
+  type SessionResumeParams,
   type SessionPromptParams,
 } from '@deepseek-ai/dsh-sdk-protocol'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -280,13 +283,38 @@ export class HarnessClient {
    * @param contentBlocks - the user message, sent verbatim.
    * @returns the queued message id.
    */
-  async prompt(sessionId: string, contentBlocks: ContentBlock[]): Promise<string> {
-    const params: SessionPromptParams = { sessionId, contentBlocks }
+  async prompt(sessionId: string, contentBlocks: ContentBlock[], environment?: Readonly<Record<string, string>>): Promise<string> {
+    const params: SessionPromptParams = { sessionId, contentBlocks, ...environment === undefined ? {} : { environment } }
     const result = await this.request('session/prompt', { ...params })
     if (!isRecord(result) || typeof result.messageId !== 'string') {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
     }
     return result.messageId
+  }
+
+  /** Cancel active work for one session without closing the runtime process. */
+  async cancel(sessionId: string, options: Omit<SessionCancelParams, 'sessionId'> = {}): Promise<boolean> {
+    const result = await this.request('session/cancel', { sessionId, ...options })
+    if (!isRecord(result) || result.cancelled !== true) {
+      throw new SdkProtocolError(`session/cancel returned no cancellation receipt: ${JSON.stringify(result)}`)
+    }
+    return true
+  }
+
+  /** Resume one persisted session in the current runtime process. */
+  async resume(sessionId: string): Promise<void> {
+    const result = await this.request('session/resume', { sessionId } satisfies SessionResumeParams)
+    if (!isRecord(result) || result.sessionId !== sessionId || result.resumed !== true) {
+      throw new SdkProtocolError(`session/resume returned no resume receipt: ${JSON.stringify(result)}`)
+    }
+  }
+
+  /** Change the durable approval policy for one live session. */
+  async setApprovalPolicy(sessionId: string, policy: SessionApprovalPolicyParams['policy']): Promise<void> {
+    const result = await this.request('session/approval-policy', { sessionId, policy } satisfies SessionApprovalPolicyParams)
+    if (!isRecord(result) || result.sessionId !== sessionId || result.policy !== policy) {
+      throw new SdkProtocolError(`session/approval-policy returned no policy receipt: ${JSON.stringify(result)}`)
+    }
   }
 
   /**

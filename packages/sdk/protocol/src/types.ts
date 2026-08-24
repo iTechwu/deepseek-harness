@@ -36,12 +36,49 @@ export interface SessionPromptParams {
   sessionId: string
   /** The prompt content blocks, sent verbatim as the user message. */
   contentBlocks: ContentBlock[]
+  /** Optional non-secret session environment overlay. The server validates the allowlist. */
+  environment?: Readonly<Record<string, string>>
 }
 
 /** Durable enqueue receipt for one prompt. */
 export interface SessionPromptResult {
   /** Identity of the queued user message. */
   messageId: string
+}
+
+/** Cancel the active work for one session while retaining or clearing queued input. */
+export interface SessionCancelParams {
+  sessionId: string
+  reason?: 'user' | 'timeout' | 'parent' | 'operator'
+  keepInbox?: boolean
+}
+
+/** Result of a session cancellation request. */
+export interface SessionCancelResult {
+  cancelled: boolean
+}
+
+/** Resume one persisted session into the current runtime process. */
+export interface SessionResumeParams {
+  sessionId: string
+}
+
+/** Result of a session resume request. */
+export interface SessionResumeResult {
+  sessionId: string
+  resumed: true
+}
+
+/** Change the durable approval policy for one live session. */
+export interface SessionApprovalPolicyParams {
+  sessionId: string
+  policy: 'ask' | 'never'
+}
+
+/** Result of a session approval-policy change. */
+export interface SessionApprovalPolicyResult {
+  sessionId: string
+  policy: 'ask' | 'never'
 }
 
 /** Deployment-mapped SDK outcome: `ok` for an accepted result, `error` otherwise. */
@@ -101,5 +138,8 @@ export interface HarnessSdkNotificationMap {
 export interface HarnessSdkRequestMap {
   'initialize': { params: InitializeParams; result: InitializeResult }
   'session/prompt': { params: SessionPromptParams; result: SessionPromptResult }
+  'session/cancel': { params: SessionCancelParams; result: SessionCancelResult }
+  'session/resume': { params: SessionResumeParams; result: SessionResumeResult }
+  'session/approval-policy': { params: SessionApprovalPolicyParams; result: SessionApprovalPolicyResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

@@ -30,3 +30,17 @@ class ServerInfo(BaseModel):
 
 class InitializeResponse(BaseModel):
     serverInfo: ServerInfo | None = None
+
+
+class SessionCancelResponse(BaseModel):
+    cancelled: bool
+
+
+class SessionResumeResponse(BaseModel):
+    sessionId: str
+    resumed: bool
+
+
+class SessionApprovalPolicyResponse(BaseModel):
+    sessionId: str
+    policy: str

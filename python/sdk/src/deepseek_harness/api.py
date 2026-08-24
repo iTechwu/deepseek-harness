@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from .client import HarnessClient, HarnessConfig
 from .errors import SdkProtocolError
@@ -119,9 +119,14 @@ class DeepSeekHarness:
         input: str | list[JsonObject],
         *,
         session_id: str | None = None,
+        environment: dict[str, str] | None = None,
         on_notification: Callable[[Notification], None] | None = None,
     ) -> RunResult:
-        return self.start_session(session_id).run(input, on_notification=on_notification)
+        return self.start_session(session_id).run(
+            input,
+            environment=environment,
+            on_notification=on_notification,
+        )
 
 
 class Session:
@@ -133,6 +138,7 @@ class Session:
         self,
         input: str | list[JsonObject],
         *,
+        environment: dict[str, str] | None = None,
         on_notification: Callable[[Notification], None] | None = None,
     ) -> RunResult:
         content_blocks = normalize_input(input)
@@ -155,6 +161,7 @@ class Session:
             message_id = self.harness.client.session_prompt(
                 self.id,
                 content_blocks,
+                environment=environment,
                 notification_subscription=subscription,
             )
 
@@ -181,6 +188,24 @@ class Session:
             notifications=notifications,
             session_root=self.harness.config.session_root,
         )
+
+    def cancel(
+        self,
+        *,
+        reason: Literal["user", "timeout", "parent", "operator"] | None = None,
+        keep_inbox: bool | None = None,
+    ) -> bool:
+        return self.harness.client.session_cancel(
+            self.id,
+            reason=reason,
+            keep_inbox=keep_inbox,
+        )
+
+    def resume(self) -> bool:
+        return self.harness.client.session_resume(self.id)
+
+    def set_approval_policy(self, policy: Literal["ask", "never"]) -> None:
+        self.harness.client.session_approval_policy(self.id, policy)
 
 
 def _is_inbox_receipt(notification: Notification, session_id: str, message_id: str) -> bool:

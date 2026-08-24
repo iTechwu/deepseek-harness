@@ -16,6 +16,9 @@ DeepSeek Harness SDK 运行时的共享协议格式（wire format）：一个按
 |---|---|---|
 | client→server | `initialize` | `InitializeParams` → `InitializeResult` |
 | client→server | `session/prompt` | `SessionPromptParams` → `SessionPromptResult`（持久入队回执） |
+| client→server | `session/cancel` | `SessionCancelParams` → `SessionCancelResult` |
+| client→server | `session/resume` | `SessionResumeParams` → `SessionResumeResult` |
+| client→server | `session/approval-policy` | `SessionApprovalPolicyParams` → `SessionApprovalPolicyResult` |
 | client→server | `shutdown` | 无参数 → `{}` |
 | server→client | `session.event` | `SessionEventNotification`（运行时内每个会话，不过滤） |
 | server→client | `session.status` | `SessionStatusNotification`（整个 agent（智能体）的 `running`/`idle` 转换） |
@@ -35,5 +38,5 @@ DeepSeek Harness SDK 运行时的共享协议格式（wire format）：一个按
 ## 已知限制与暂缓事项
 
 - **无协议版本协商**——握手只携带 `serverInfo.version`（`0.0.1`，客户端不校验）；处于预发布阶段，无兼容承诺。
-- **无取消与会话关闭方法**——客户端放弃轮次的方式是关闭运行时进程；见 [`dsh-sdk-jsonrpc-server` README](../server/README.zh.md)。
+- **无会话关闭方法**——活动工作使用 `session/cancel`，进程生命周期仍使用 shutdown。
 - **server→client 请求是未使用的功能**——传输层支持，但服务器从不发送；Python SDK 的应答接口为未来审批流程预留。

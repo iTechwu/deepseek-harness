@@ -283,6 +283,24 @@ describe('HarnessClient', () => {
     await client.close()
   })
 
+  it('drives session cancel, resume, approval policy, and environment over the wire', async () => {
+    const dir = await tempDir('sdk-session-wire-')
+    const recordFile = join(dir, 'prompt.jsonl')
+    const client = new HarnessClient(fakeLaunch({ FAKE_RECORD_PROMPT: recordFile }))
+    cleanups.push(() => client.close())
+    await client.initialize({ cwd: dir, provider: 'p', model: 'm' })
+    await client.cancel('session-1', { reason: 'operator', keepInbox: true })
+    await client.resume('session-1')
+    await client.setApprovalPolicy('session-1', 'never')
+    await client.prompt('session-1', normalizeInput('wire'), { DEEPSEEK_BASE_URL: 'https://api.deepseek.com' })
+    const prompt = JSON.parse((await readFile(recordFile, 'utf8')).trim()) as Record<string, unknown>
+    expect(prompt).toMatchObject({
+      sessionId: 'session-1',
+      environment: { DEEPSEEK_BASE_URL: 'https://api.deepseek.com' },
+    })
+    await client.close()
+  })
+
   it('fails pending requests with exit code and stderr tail when the runtime dies', async () => {
     const client = new HarnessClient(fakeLaunch({ FAKE_EXIT_BEFORE_INIT: '1', FAKE_STDERR: 'fatal: scripted death' }))
     cleanups.push(() => client.close())

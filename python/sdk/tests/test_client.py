@@ -485,6 +485,56 @@ for line in sys.stdin:
     assert notification.payload["sessionId"] == "main"
 
 
+def test_client_supports_session_control_and_environment_overlay(tmp_path: Path) -> None:
+    script = tmp_path / "fake_session_control.py"
+    seen = tmp_path / "seen.json"
+    script.write_text(
+        """
+import json
+import os
+import sys
+
+seen = []
+for line in sys.stdin:
+    msg = json.loads(line)
+    seen.append(msg)
+    method = msg.get("method")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+    elif method == "session/prompt":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
+    elif method == "session/cancel":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"cancelled": True}}), flush=True)
+    elif method == "session/resume":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": msg["params"]["sessionId"], "resumed": True}}), flush=True)
+    elif method == "session/approval-policy":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"sessionId": msg["params"]["sessionId"], "policy": msg["params"]["policy"]}}), flush=True)
+    elif method == "shutdown":
+        json.dump(seen, open(os.environ["SEEN"], "w"))
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+        break
+""".strip()
+    )
+
+    with HarnessClient(
+        HarnessConfig(launch_args_override=(sys.executable, str(script)), env={"SEEN": str(seen)})
+    ) as client:
+        client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+        assert client.session_prompt(
+            "main",
+            [{"type": "text", "text": "fix it"}],
+            environment={"DEEPSEEK_BASE_URL": "https://api.deepseek.example"},
+        ) == "message-1"
+        assert client.session_cancel("main", reason="operator", keep_inbox=False)
+        assert client.session_resume("main")
+        client.session_approval_policy("main", "ask")
+
+    methods = [message["method"] for message in json.loads(seen.read_text())]
+    assert methods == ["initialize", "session/prompt", "session/cancel", "session/resume", "session/approval-policy", "shutdown"]
+    prompt = json.loads(seen.read_text())[1]
+    assert prompt["params"]["environment"] == {"DEEPSEEK_BASE_URL": "https://api.deepseek.example"}
+
+
 def test_client_keeps_unmatched_notifications_available_globally_while_subscribed() -> None:
     client = HarnessClient()
     with client.subscribe_session_notifications("main"):

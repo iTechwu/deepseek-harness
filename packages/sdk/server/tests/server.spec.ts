@@ -209,6 +209,37 @@ describe('HarnessSdkJsonRpcServer', () => {
     expect(otherHandle.dispose).toHaveBeenCalledOnce()
   })
 
+  it('exposes cancel and approval-policy as session-owned wire operations', async () => {
+    const cancel = vi.fn()
+    const append = vi.fn()
+    const agent = {
+      id: SessionId('wire-control'),
+      session: { events: [], append },
+      followup: vi.fn(),
+      cancel,
+    } as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      get: () => undefined,
+      agents: {
+        create: vi.fn(async () => handle),
+        get: () => agent,
+      },
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
+    await server.prompt({ sessionId: 'wire-control', contentBlocks: [{ type: 'text', text: 'hello' }] })
+
+    await expect(server.cancel({ sessionId: 'wire-control', reason: 'operator', keepInbox: true }))
+      .resolves.toEqual({ cancelled: true })
+    expect(cancel).toHaveBeenCalledWith({ kind: 'hook', reason: 'operator' }, { keepInbox: true })
+    await expect(server.approvalPolicy({ sessionId: 'wire-control', policy: 'never' }))
+      .resolves.toEqual({ sessionId: 'wire-control', policy: 'never' })
+    expect(append).toHaveBeenCalledWith('approval/policy', { policy: 'never' })
+    await server.shutdown()
+  })
+
   it('rejects a prompt for a session whose agent was disposed outside the server', async () => {
     const followup = vi.fn<Agent['followup']>()
     const agent = ({

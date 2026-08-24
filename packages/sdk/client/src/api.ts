@@ -124,6 +124,8 @@ export interface RunOptions {
   sessionId?: string
   /** Observer invoked with every notification for this session tree, in wire order. */
   onNotification?: (notification: HarnessNotification) => void
+  /** Non-secret environment overlay applied to this session's scoped setup. */
+  environment?: Readonly<Record<string, string>>
 }
 
 /**
@@ -136,6 +138,21 @@ export class HarnessSession {
    */
   constructor(readonly harness: DeepSeekHarness, readonly id: string) {}
 
+  /** Cancel the active turn for this session and keep the runtime reusable. */
+  cancel(options?: { reason?: 'user' | 'timeout' | 'parent' | 'operator'; keepInbox?: boolean }): Promise<boolean> {
+    return this.harness.client.cancel(this.id, options)
+  }
+
+  /** Resume this persisted session before sending its next prompt. */
+  resume(): Promise<void> {
+    return this.harness.client.resume(this.id)
+  }
+
+  /** Persist the approval policy used by this session. */
+  setApprovalPolicy(policy: 'ask' | 'never'): Promise<void> {
+    return this.harness.client.setApprovalPolicy(this.id, policy)
+  }
+
   /**
    * Queue one prompt, then observe the whole session through its next idle.
    * @param input - prompt text, or content blocks sent verbatim.
@@ -143,7 +160,7 @@ export class HarnessSession {
    * @returns the owned activity interval; rejects on transport loss, timeout,
    * or a protocol error.
    */
-  async run(input: string | ContentBlock[], options?: Pick<RunOptions, 'onNotification'>): Promise<RunResult> {
+  async run(input: string | ContentBlock[], options?: Pick<RunOptions, 'onNotification' | 'environment'>): Promise<RunResult> {
     await this.harness.start()
     const client = this.harness.client
     const contentBlocks = normalizeInput(input)
@@ -166,7 +183,7 @@ export class HarnessSession {
       options?.onNotification?.(notification)
     }
     try {
-      const messageId = await client.prompt(this.id, contentBlocks)
+      const messageId = await client.prompt(this.id, contentBlocks, options?.environment)
       let received = false
       while (true) {
         const notification = await subscription.next()

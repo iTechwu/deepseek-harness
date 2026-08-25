@@ -8,6 +8,9 @@ ARG NPM_REGISTRY=https://registry.npmjs.org/
 ARG PNPM_FETCH_TIMEOUT=300000
 ARG PNPM_FETCH_RETRIES=5
 ARG PNPM_NETWORK_CONCURRENCY=8
+# The build records the source commit into the client bundle without needing a
+# .git checkout, so the gate-free image build keeps this value from pull-time.
+ARG DSH_CLIENT_COMMIT_HASH=0000000
 
 ENV PNPM_CONFIG_FETCH_TIMEOUT=${PNPM_FETCH_TIMEOUT} \
     PNPM_CONFIG_FETCH_RETRIES=${PNPM_FETCH_RETRIES} \
@@ -23,8 +26,7 @@ RUN npm config set registry "${NPM_REGISTRY}" \
 WORKDIR /src
 COPY . .
 RUN pnpm install --frozen-lockfile \
-    && pnpm run check:ci:static \
-    && pnpm run build \
+    && DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH} pnpm run build \
     && pnpm deploy --legacy --filter @deepseek-ai/dsh --prod /opt/dsh
 
 FROM ${NODE_BASE_IMAGE} AS runtime

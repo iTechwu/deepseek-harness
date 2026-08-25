@@ -4,6 +4,11 @@ set -euo pipefail
 : "${DSH_HOME:=/var/lib/dsh}"
 export DSH_HOME
 
+# Prefer a fast China registry for any runtime npm/pnpm (plugin installs).
+# NPM_REGISTRY (from the deployment env) wins; otherwise default to the mirror.
+npm config set registry "${NPM_REGISTRY:-https://registry.npmmirror.com}" >/dev/null 2>&1 || true
+pnpm config set registry "${NPM_REGISTRY:-https://registry.npmmirror.com}" >/dev/null 2>&1 || true
+
 mkdir -p "${DSH_HOME}/profiles" "${DSH_HOME}/profiles/node_modules" /opt/dsh-plugins
 DSH_CMD=(node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)
 

@@ -46,6 +46,7 @@ COPY --from=build /opt/dsh-packages /opt/dsh-packages
 COPY --from=build /opt/vendor-packages /opt/vendor-packages
 RUN npm config set registry "${NPM_REGISTRY}" \
     && npm install --global pnpm@11.7.0 \
+    && pnpm config set registry "${NPM_REGISTRY}" \
     && mkdir -p /opt/dsh /pnpm /var/lib/dsh/profiles /var/lib/dsh/profiles/node_modules /opt/dsh-plugins \
     && npm install --prefix /opt/dsh --omit=dev --no-audit --no-fund \
       /opt/dsh-packages/*.tgz /opt/vendor-packages/*.tgz \

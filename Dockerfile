@@ -18,6 +18,7 @@ ENV PNPM_CONFIG_FETCH_TIMEOUT=${PNPM_FETCH_TIMEOUT} \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:${PATH} \
     DSH_CLIENT_COMMIT_HASH=${DSH_CLIENT_COMMIT_HASH} \
+    DSH_BUILD_CLIENT_PROFILE=official \
     TZ=Asia/Shanghai
 
 RUN npm config set registry "${NPM_REGISTRY}" \

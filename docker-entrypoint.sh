@@ -5,7 +5,7 @@ set -euo pipefail
 export DSH_HOME
 
 mkdir -p "${DSH_HOME}/profiles" "${DSH_HOME}/profiles/node_modules" /opt/dsh-plugins
-DSH_CMD=(node /src/apps/cli/lib/bin.js)
+DSH_CMD=(node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js)
 
 # Install optional out-of-tree plugins into the persistent web profile. Values
 # may be npm specs or absolute paths supplied through a mounted volume.
@@ -15,7 +15,12 @@ if [[ -n "${DSH_PLUGIN_SPECS:-}" ]]; then
         case "${spec}" in
             /*) [[ -e "${spec}" ]] || { echo "DSH plugin path does not exist: ${spec}" >&2; exit 1; } ;;
         esac
-        "${DSH_CMD[@]}" plugin --profile web add "${spec}"
+        # A single failed plugin spec (e.g. an npm marketplace that needs
+        # registry access) must not take the whole dsh process down: log it and
+        # keep booting so the remaining plugins still load.
+        if ! "${DSH_CMD[@]}" plugin --profile web add "${spec}"; then
+            echo "DSH plugin install failed (continuing; profile may lack it): ${spec}" >&2
+        fi
     done < <(printf '%s\n' "${DSH_PLUGIN_SPECS}" | tr ',' '\n')
 fi
 

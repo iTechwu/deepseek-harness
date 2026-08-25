@@ -1,0 +1,40 @@
+# dsh-openmontage-mcp bundle patch.
+# Adds one @deepseek-ai/dsh-mcp-client instance that connects to the OpenMontage
+# MCP server over Streamable HTTP and registers its tools under the
+# mcp__openmontage__<tool> namespace.
+#
+# Configuration is read from the process environment at load time (the harness
+# container is where these are injected):
+#   OPENMONTAGE_MCP_URL          -> MCP endpoint (default http://openmontage-mcp:8765/mcp)
+#   OPENMONTAGE_SERVICE_TOKEN    -> Bearer token required by OpenMontage (/mcp tools)
+#
+# The harness container runs with host networking (DSH refuses 0.0.0.0 and Nginx
+# proxies via the host loopback), so it cannot use Docker bridge DNS. The OpenMontage
+# service name is mapped to 127.0.0.1 via the deployment's extra_hosts entry, which
+# points at the host-published openmontage-mcp port — keeping the endpoint stable
+# across OpenMontage container recreates.
+#
+# failOnStartupError stays false on purpose: if OpenMontage is briefly down the
+# web profile still boots and the supervisor reconnect loop registers the tools
+# once it comes back. The token is required — set OPENMONTAGE_SERVICE_TOKEN in
+# the deployment env, or tool calls will be rejected with 401.
+
+- insert:
+    - id: mcp-openmontage
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: openmontage
+        url: !!js (process.env.OPENMONTAGE_MCP_URL || 'http://openmontage-mcp:8765/mcp')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.OPENMONTAGE_SERVICE_TOKEN || ''))
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    # Registers a system-prompt section that tells the model when to reach for
+    # the mcp__openmontage__* tools (video generation / clone-recreate). The
+    # module lives in this bundle's index.js.
+    - id: openmontage-guidance
+      name: '@dofe/dsh-openmontage-mcp'

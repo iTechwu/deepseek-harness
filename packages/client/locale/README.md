@@ -6,11 +6,25 @@ Locale plugin: LocaleRuntime — the `zh`/`en` preference stored as `locale.pref
 
 ## Model Experience
 
-None, as the locale registry serves browser UI copy; nothing here reaches a model request.
+### Response-language system prompt
+
+#### What the model sees
+
+When `locale.preference` is explicitly set, the Host half adds a live `preference:response-language` section: `zh` requests Chinese and `en` requests English for model-facing natural-language content. The instruction preserves code, commands, paths, identifiers, file contents, and quoted text, and an explicit user request for another language takes precedence. When the preference is absent, this package adds no language instruction.
+
+##### Prompt text
+
+```markdown
+请始终使用中文回答用户。解释、总结、状态更新和其他面向用户的自然语言内容使用中文。代码、命令、路径、标识符、文件内容和引用文本保持原样；除非用户明确要求其他语言，否则不要切换语言。
+```
+
+#### Token effect
+
+The section adds one short instruction only when an explicit preference exists; no preference adds no prompt tokens.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+The section is assembled with the system prompt for each model request, so changing the setting applies to later requests without restarting the session. The text is deterministic for a given preference and changes the system-prompt cache key only when the preference changes.
 
 ## Known Limitations and Deferred Work
 

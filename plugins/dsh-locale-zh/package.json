@@ -1,0 +1,23 @@
+{
+  "name": "@dofe/dsh-locale-zh",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle: force the model to respond in Simplified Chinese.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

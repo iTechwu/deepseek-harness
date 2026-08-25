@@ -1,0 +1,5 @@
+# dsh-locale-zh patch: register the locale-zh host plugin so its system-prompt
+# section (force Simplified Chinese) is composed into the web profile.
+- insert:
+    - id: locale-zh
+      name: '@dofe/dsh-locale-zh'

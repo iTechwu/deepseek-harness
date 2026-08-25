@@ -27,7 +27,7 @@ RUN npm config set registry "${NPM_REGISTRY}" \
 WORKDIR /src
 COPY . .
 RUN pnpm install --frozen-lockfile \
-    && pnpm run build -- --profile official \
+    && pnpm run build \
     && pnpm run release:pack --family dsh --out /opt/dsh-packages \
     && pnpm run release:pack --family vendor --out /opt/vendor-packages
 

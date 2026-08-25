@@ -5,7 +5,7 @@ set -euo pipefail
 export DSH_HOME
 
 mkdir -p "${DSH_HOME}/profiles" "${DSH_HOME}/profiles/node_modules" /opt/dsh-plugins
-DSH_CMD=(node /opt/dsh/lib/bin.js)
+DSH_CMD=(node /src/apps/cli/lib/bin.js)
 
 # Install optional out-of-tree plugins into the persistent web profile. Values
 # may be npm specs or absolute paths supplied through a mounted volume.

@@ -1,0 +1,124 @@
+# dsh-tools-mcp bundle patch.
+# Registers tools.dofe.ai's nine business-domain Streamable HTTP MCP endpoints as
+# nine @deepseek-ai/dsh-mcp-client instances, so their tools surface to the model
+# under the mcp__tools-<domain>__<tool> namespace (e.g.
+# mcp__tools-platform__business_capabilities_list).
+#
+# tools.dofe.ai (FastAPI) mounts a shared /mcp gateway; each business domain is a
+# separate stateless streamable-http endpoint at /mcp/<domain>. The API is
+# published on the CI host loopback at TOOLS_API_PORT (default 13103) and its
+# MCP_ALLOWED_HOSTS already admits 127.0.0.1:* — so the harness (host networking,
+# DSH refuses 0.0.0.0) connects directly to http://127.0.0.1:13103 with no
+# extra_hosts entry and no Authorization header (the MCP server is
+# unauthenticated; the deployment Nginx enforces TOOLS_ALLOWED_CIDRS separately).
+#
+# All nine routes are registered so the model can reach every capability the
+# gateway exposes. If a domain is briefly down the web profile still boots
+# (failOnStartupError: false) and the reconnect supervisor registers its tools
+# once the server returns.
+
+- insert:
+    # --- tools.dofe.ai business domains (all nine gateway routes) ---
+    - id: mcp-tools-platform
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-platform
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/platform')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-supply-chain
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-supply-chain
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/supply-chain')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-talent-discovery
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-talent-discovery
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/talent-discovery')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-lead-discovery
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-lead-discovery
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/lead-discovery')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-lead-monitor
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-lead-monitor
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/lead-monitor')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-hotspot-discovery
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-hotspot-discovery
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/hotspot-discovery')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-custom-car-monitoring
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-custom-car-monitoring
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/custom-car-monitoring')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-viral-video
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-viral-video
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/viral-video')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    - id: mcp-tools-browser-intelligence
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: tools-browser-intelligence
+        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/browser-intelligence')
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+
+    # Registers a system-prompt section telling the model when to reach for the
+    # mcp__tools-*__ tools. The module lives in this bundle's index.js.
+    - id: tools-guidance
+      name: '@dofe/dsh-tools-mcp'

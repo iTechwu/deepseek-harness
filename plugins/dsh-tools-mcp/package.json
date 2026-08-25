@@ -1,0 +1,23 @@
+{
+  "name": "@dofe/dsh-tools-mcp",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle: registers tools.dofe.ai's nine business-domain Streamable HTTP MCP endpoints as MCP clients for the dsh web profile. Their tools surface as mcp__tools-<domain>__<tool>, and a prompt section tells the model when to use them.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

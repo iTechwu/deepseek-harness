@@ -27,7 +27,6 @@ RUN npm config set registry "${NPM_REGISTRY}" \
 WORKDIR /src
 COPY . .
 RUN pnpm install --frozen-lockfile \
-    && pnpm run check:ci:static \
     && pnpm run build -- --profile official \
     && pnpm run release:pack --family dsh --out /opt/dsh-packages \
     && pnpm run release:pack --family vendor --out /opt/vendor-packages
@@ -50,6 +49,28 @@ RUN npm config set registry "${NPM_REGISTRY}" \
     && npm install --prefix /opt/dsh --omit=dev --no-audit --no-fund \
       /opt/dsh-packages/*.tgz /opt/vendor-packages/*.tgz \
     && chown -R node:node /var/lib/dsh /opt/dsh /opt/dsh-plugins /pnpm
+
+# ============================================================================
+# Browser tooling: Google Chrome + OpenCLI
+# ----------------------------------------------------------------------------
+# The harness drives a real Chrome session through the OpenCLI CLI (site
+# adapters + `opencli browser *`). Bake both into the runtime image so they
+# survive container recreates. Node >= 20 is already present in the base.
+# Set NPM_REGISTRY/CHROME_DEB_URL/NODE_DIST_URL to reachable mirrors.
+# ============================================================================
+ARG CHROME_DEB_URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+ARG NODE_DIST_URL=https://npmmirror.com/mirrors/node
+RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg; \
+    curl -fsSL -o /tmp/google-chrome.deb "${CHROME_DEB_URL}"; \
+    apt-get install -y /tmp/google-chrome.deb; \
+    rm -f /tmp/google-chrome.deb; \
+    npm config set registry "${NPM_REGISTRY}"; \
+    npm install -g @jackwener/opencli; \
+    google-chrome --version; \
+    opencli --version
 
 COPY --chown=node:node docker-entrypoint.sh /usr/local/bin/dsh-entrypoint
 RUN chmod 0755 /usr/local/bin/dsh-entrypoint

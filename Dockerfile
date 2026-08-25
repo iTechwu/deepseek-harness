@@ -39,7 +39,7 @@ ENV NODE_ENV=production \
 
 RUN npm config set registry "${NPM_REGISTRY}" \
     && npm install --global pnpm@11.7.0 \
-    && mkdir -p /var/lib/dsh/profiles /var/lib/dsh/profiles/node_modules /opt/dsh-plugins \
+    && mkdir -p /pnpm /var/lib/dsh/profiles /var/lib/dsh/profiles/node_modules /opt/dsh-plugins \
     && chown -R node:node /var/lib/dsh /opt/dsh-plugins /pnpm
 
 COPY --from=build --chown=node:node /opt/dsh /opt/dsh

@@ -51,7 +51,12 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const mirror = new SettingsDescribeMirror(
     connection.api,
-    connection.isLoopback ? 'host' : 'memory',
+    // Remote deployment: the settings mirror is always host-backed so a
+    // trusted-host browser can read/write settings. Security is enforced
+    // server-side by the client-connection privileged-method fence, which the
+    // deployment gates with DSH_ALLOW_REMOTE_SETTINGS (default on); a denied
+    // request surfaces as a settings error rather than a silent no-op.
+    'host',
   )
   ctx.effect(() => {
     const disposers = [

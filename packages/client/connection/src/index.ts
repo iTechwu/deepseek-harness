@@ -119,6 +119,21 @@ const PRIVILEGED_METHODS = new Set([
 ])
 
 /**
+ * Privileged methods permitted to a declared trusted host when the deployment
+ * opts in via `DSH_ALLOW_REMOTE_SETTINGS` (default on). The READ of the
+ * settings document and the configuration writes it fronts are the one write
+ * surface a remote operator needs to configure models/providers through the
+ * browser; everything else in PRIVILEGED_METHODS stays pinned to loopback.
+ */
+const REMOTE_CONFIGURABLE_METHODS = new Set([
+  'settings.describe',
+  'settings.openDocument',
+  'settings.update',
+  'settings.replace',
+  'settings.mutate',
+])
+
+/**
  * Mounts the API gateway under the browser transport prefix. Every request on
  * the prefix passes the browser-trust fence first (DNS-rebinding and
  * cross-site defense — [api-request-trust](./api-request-trust.ts));
@@ -134,6 +149,11 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
+  // Deployment opt-in (env, default on): when enabled, the settings methods may
+  // be served to a declared trusted host beyond loopback so a remote operator
+  // can configure models/providers through the browser. This is still a
+  // DNS-rebinding fence, not authentication — see PRIVILEGED_METHODS.
+  const allowRemoteSettings = process.env.DSH_ALLOW_REMOTE_SETTINGS !== '0'
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
   const connection = new HostConnectionService(ctx, trustedHosts)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
@@ -144,7 +164,10 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
         : undefined
       if (method !== undefined
         && PRIVILEGED_METHODS.has(method)
-        && !isTrustedApiRequest(request, [])) {
+        && !isTrustedApiRequest(
+          request,
+          allowRemoteSettings && REMOTE_CONFIGURABLE_METHODS.has(method) ? trustedHosts : [],
+        )) {
         return new Response('forbidden', { status: 403 })
       }
       if (request.method === 'GET' && (pathname === MUX_EVENTS_PATH || pathname === HOST_EVENTS_PATH)) {

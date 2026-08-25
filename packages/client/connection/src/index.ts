@@ -123,7 +123,10 @@ const PRIVILEGED_METHODS = new Set([
  * opts in via `DSH_ALLOW_REMOTE_SETTINGS` (default on). The READ of the
  * settings document and the configuration writes it fronts are the one write
  * surface a remote operator needs to configure models/providers through the
- * browser; everything else in PRIVILEGED_METHODS stays pinned to loopback.
+ * browser. The configuration plane also carries the models page's credential
+ * state and the provider model-discovery probe, which a remote operator needs
+ * to manage providers; everything else in PRIVILEGED_METHODS stays pinned to
+ * loopback.
  */
 const REMOTE_CONFIGURABLE_METHODS = new Set([
   'settings.describe',
@@ -131,6 +134,10 @@ const REMOTE_CONFIGURABLE_METHODS = new Set([
   'settings.update',
   'settings.replace',
   'settings.mutate',
+  'credentials.describe',
+  'credentials.set',
+  'credentials.unset',
+  'llm.discoverModels',
 ])
 
 /**

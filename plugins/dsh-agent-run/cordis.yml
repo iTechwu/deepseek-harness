@@ -98,6 +98,9 @@
       6. Also, to give the wrapper a deterministic signal, write your final
          status + artifacts to {projectDir}/.openmontage/agent-run/result.json
          as {"status": "...", "artifacts": {...}, "error": "..."} once done.
+         The artifacts values MUST be the actual JSON objects INLINE (dicts) that
+         the stage's checkpoint schema expects — e.g. for research,
+         "research_brief": { ...the brief object... }, NOT a file path string.
          The dsh-agent-run bin reads this file and re-writes the checkpoint
          through lib.checkpoint as the authoritative stage outcome.
       7. Never print media bytes or secrets. Keep stdout/err concise — the

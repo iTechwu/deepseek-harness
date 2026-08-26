@@ -162,7 +162,7 @@ function normalizeGatewayEnv() {
     const raw = base.replace(/\/+$/, '')
     process.env.DEEPSEEK_BASE_URL = /\/v1$/.test(raw) ? raw : `${raw}/v1`
   }
-  const key = process.env.OPENAI_API_KEY || process.env.DOFE_MODEL_API_KEY
+  const key = process.env.DOFE_MODEL_API_KEY || process.env.OPENAI_API_KEY
   if (key && !process.env.DEEPSEEK_API_KEY) process.env.DEEPSEEK_API_KEY = key
   if (!process.env.DEEPSEEK_BASE_URL) {
     throw new Error('dsh-agent-run: no gateway base URL; set OPENAI_BASE_URL or DOFE_MODEL_BASE_URL')

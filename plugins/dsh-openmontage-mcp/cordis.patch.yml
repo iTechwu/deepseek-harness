@@ -28,6 +28,7 @@
         url: !!js (process.env.OPENMONTAGE_MCP_URL || 'http://openmontage-mcp:8765/mcp')
         headers:
           Authorization: !!js ('Bearer ' + (process.env.OPENMONTAGE_SERVICE_TOKEN || ''))
+          'X-Dofe-Job-Attribution': !!js (Buffer.from(JSON.stringify({workspace_id:(process.env.OPENMONTAGE_JOB_WORKSPACE_ID||'dsh-dofe'),employee_id:(process.env.OPENMONTAGE_JOB_EMPLOYEE_ID||'dofe-techwu'),runtime_id:(process.env.OPENMONTAGE_JOB_RUNTIME_ID||'dsh-docker'),root_task_id:(process.env.OPENMONTAGE_JOB_ROOT_TASK_ID||'dsh-replicate'),conversation_id:(process.env.OPENMONTAGE_JOB_CONVERSATION_ID||'dsh-web'),source_invocation_id:(process.env.OPENMONTAGE_JOB_INVOCATION_ID||'dsh-api'),trace_id:(process.env.OPENMONTAGE_JOB_TRACE_ID||'dsh-trace')})).toString('base64url'))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:

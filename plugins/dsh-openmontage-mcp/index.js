@@ -22,7 +22,10 @@ const GUIDANCE = `OpenMontage 视频生成：当用户需要生成、复刻或�
 执行顺序：
 1. 先调用 mcp__openmontage__openmontage_capabilities，读取本次可用的 provider、工作流与提交契约；
 2. 若用户给了视频地址，调用 mcp__openmontage__prepare_reference_clone，并按返回的 agent_instructions 走 OpenMontage 管线审批门；
-3. 用 mcp__openmontage__submit_video_job 提交任务（request.workflow 必须是 pipeline 名，例如 compose，而不是阶段名）；
+3. 用 mcp__openmontage__submit_video_job 提交任务，request 必须满足：
+   - request.workflow 必须是 pipeline 名（如 "animation"），绝不能是阶段名（compose 是 stage，不是 workflow）；
+   - request.input 必须用 TEXT 分支：{"type":"text","inlineText":"<创意brief/概念文本>"}。绝不要用 ARTIFACT 分支 {"type":"artifact","artifactId":"<...>"} 去引用已准备的 project_id（如 clone-...）——project_id 不是 artifact，提交时会被拒绝（OPENMONTAGE_ARTIFACT_INPUT_FAILED）。artifactId 只用于真正经 artifact bridge 上传的文件；
+   - 其余按契约：brief/{title,durationSeconds,audience}、output/{container,resolution,fps}、budget/{maxAmount,currency}、clientRequestId（幂等键，重试复用、新任务更换）。
 4. 用 mcp__openmontage__get_video_job / list_video_job_events / approve_video_stage / cancel_video_job 跟踪、审批与取消；
 5. 完成后用 mcp__openmontage__list_video_artifacts 获取产物，并把结果（视频/素材）交付给用户。
 

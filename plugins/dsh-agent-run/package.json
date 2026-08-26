@@ -1,0 +1,24 @@
+{
+  "name": "@dofe/dsh-agent-run",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle: a headless agent-run executor bin (dsh-agent-run) that deepseek-harness's own LLM + bash tool drive one OpenMontage pipeline stage and write its checkpoint, replacing codex exec. Spawned by OpenMontage via OPENMONTAGE_AGENT_EXECUTOR_JSON.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "bin": {
+    "dsh-agent-run": "bin/agent-run.js"
+  },
+  "files": [
+    "index.js",
+    "bin/agent-run.js",
+    "cordis.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./bin/agent-run.js": "./bin/agent-run.js",
+    "./cordis.yml": "./cordis.yml",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {}
+}

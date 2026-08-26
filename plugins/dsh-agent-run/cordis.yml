@@ -1,0 +1,112 @@
+# dsh-agent-run spine composition.
+#
+# This is the cordis.yml that the `dsh-agent-run` bin boots headlessly (via
+# @deepseek-ai/dsh-app-boot `boot()`) to run ONE OpenMontage pipeline stage.
+# It composes the harness "agent spine" (LLM + tool runtime + agent loop),
+# the concrete DeepSeek/OpenAI-compatible adapter, and a real bash executor.
+# There is NO web UI and NO JSON-RPC server: the bin drives a single agent task
+# directly and exits.
+#
+# llm-deepseek is pointed at the OpenMontage gateway purely from the process
+# environment (set by the OpenMontage worker via OPENMONTAGE_AGENT_EXECUTOR_JSON):
+#   OPENAI_BASE_URL / DOFE_MODEL_BASE_URL  -> gateway base (the bin normalizes
+#                                              these into DEEPSEEK_BASE_URL)
+#   OPENAI_API_KEY / DOFE_MODEL_API_KEY    -> gateway key  (the bin normalizes
+#                                              these into DEEPSEEK_API_KEY)
+# The adapter appends /chat/completions to the base URL, so DEEPSEEK_BASE_URL
+# must end in /v1 (see packages/llm/llm-deepseek/src/adapter.ts:607).
+
+# NOTE: no settings / credentials plugins are mounted here, on purpose.
+#   - credentials (dsh-credentials-local): if mounted, the DeepSeek adapter's
+#     resolveApiKey consults ONLY the credential store and never falls back to
+#     the process env (packages/llm/llm-deepseek/src/index.ts:411-432). The
+#     gateway key arrives via OPENAI_API_KEY/DOFE_MODEL_API_KEY on the process
+#     env, so we must NOT mount the store and let env resolution win.
+#   - settings: this is a one-shot executor; there is no user settings document
+#     to reconcile.
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    # The bin normalizes OPENAI_*/DOFE_MODEL_* into DEEPSEEK_BASE_URL before
+    # boot, so this expression always has a gateway value to read. Empty means
+    # the adapter would silently fall back to the public API — the bin refuses
+    # to boot in that case.
+    baseURL: !!js "process.env.DEEPSEEK_BASE_URL || ''"
+    apiKeyEnv: 'DEEPSEEK_API_KEY'
+    thinking: !!js "process.env.DSH_AGENT_RUN_THINKING || 'disabled'"
+    reasoningEffort: !!js "process.env.DSH_AGENT_RUN_REASONING_EFFORT || 'low'"
+    maxTokens: !!js "Number(process.env.DSH_AGENT_RUN_MAX_TOKENS || 16000)"
+    models:
+      - id: !!js "process.env.OPENMONTAGE_AGENT_MODEL_ID || 'deepseek-v4-flash'"
+        contextWindow: 128000
+      - id: deepseek-v4-flash
+        contextWindow: 128000
+
+# Managed child-process groups for the bash executor (spawn/kill/output plumbing).
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# The concrete bash executor. Commands run in the OpenMontage repo root (the
+# worker spawns this bin with cwd = the OpenMontage checkout), so
+# `python -c 'from lib.checkpoint import ...'` and `from tools...` resolve.
+- id: bash
+  name: '@deepseek-ai/dsh-bash-local'
+  config:
+    cwd: !!js process.cwd()
+    timeoutMs: !!js "Number(process.env.OPENMONTAGE_AGENT_BASH_TIMEOUT_MS || 60000)"
+
+# The agent spine: LLM runtime, session store, system prompt, tool runtime,
+# agent registry, skills, bash tool, and the agent loop. The bin creates the
+# single agent dynamically (agents: [] here) so it can push the stage prompt as
+# the one user message and read the session events afterwards.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    persona: |
+      You are dsh-agent-run, the DeepSeek Harness headless executor for exactly
+      one OpenMontage pipeline stage, replacing codex exec. You are driven by
+      the DeepSeek Harness LLM and the bash tool. There is no user in the loop;
+      everything you do is read by the OpenMontage worker through a checkpoint.
+
+      1. Parse the assignment. The FIRST line of your task is
+         OPENMONTAGE_ASSIGNMENT_PATH="<path>". Read that JSON file (StageAssignment
+         to_wire) to get projectDir, projectsDir, projectId, stage, pipeline,
+         stageAttempt, directorSkill, request, attribution and jobSnapshot.
+      2. Inspect context. In the OpenMontage repo (your cwd) read AGENT_GUIDE.md,
+         skills/meta/checkpoint-protocol.md, the named pipeline manifest under
+         pipeline_defs/ (pipeline_type = assignment.pipeline), and directorSkill
+         if present. Read Skill::prompt documents when they are named.
+      3. Stay in scope. Work ONLY inside assignment.projectDir. The OpenMontage
+         tools are a Python registry: run `python3 -c "..."` from the repo root
+         with e.g.
+           from tools.tool_registry import registry; registry.discover();
+           print(json.dumps(registry.provider_menu_summary(), indent=2))
+         and call a tool class's `.execute({...})` (returns ToolResult with
+         .success/.data/.error). Prefer selector tools when a capability has
+         multiple providers. Follow AGENT_GUIDE.md's tool contract exactly.
+      4. Checkpoint protocol. When you enter the stage write an in_progress
+         checkpoint by running the documented python write_checkpoint(...) call
+         (see skills/meta/checkpoint-protocol.md) so the board shows liveness.
+         At the end produce the canonical artifact(s) for this stage and also
+         WRITE the final checkpoint yourself through the same python entry
+         point (from lib.checkpoint import write_checkpoint) with the correct
+         project_id / pipeline_type / stage identity, status
+         'completed' | 'awaiting_human' | 'failed', and the artifacts.
+      5. Human gates. If the stage is gated (human_approval_default true) write
+         status 'awaiting_human' and STOP. Never write 'completed' for a gated
+         stage without a real approval. Do not proceed to later stages.
+      6. Also, to give the wrapper a deterministic signal, write your final
+         status + artifacts to {projectDir}/.openmontage/agent-run/result.json
+         as {"status": "...", "artifacts": {...}, "error": "..."} once done.
+         The dsh-agent-run bin reads this file and re-writes the checkpoint
+         through lib.checkpoint as the authoritative stage outcome.
+      7. Never print media bytes or secrets. Keep stdout/err concise — the
+         OpenMontage worker captures it as the execution log. The checkpoint
+         (and result.json) is the execution result.
+    workspaceContext: false
+    toolBash:
+      timeoutMs: !!js "Number(process.env.OPENMONTAGE_AGENT_BASH_TIMEOUT_MS || 60000)"
+    skills:
+      enabled: false

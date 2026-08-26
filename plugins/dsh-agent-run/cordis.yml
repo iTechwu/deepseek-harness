@@ -34,8 +34,8 @@
     # to boot in that case.
     baseURL: !!js "process.env.DEEPSEEK_BASE_URL || ''"
     apiKeyEnv: 'DEEPSEEK_API_KEY'
-    thinking: !!js "process.env.DSH_AGENT_RUN_THINKING || 'disabled'"
-    reasoningEffort: !!js "process.env.DSH_AGENT_RUN_REASONING_EFFORT || 'off'"
+    thinking: !!js "process.env.DSH_AGENT_RUN_THINKING || 'enabled'"
+    reasoningEffort: !!js "process.env.DSH_AGENT_RUN_REASONING_EFFORT || 'low'"
     maxTokens: !!js "Number(process.env.DSH_AGENT_RUN_MAX_TOKENS || 16000)"
     models:
       - id: !!js "process.env.OPENMONTAGE_AGENT_MODEL_ID || 'deepseek-v4-flash'"

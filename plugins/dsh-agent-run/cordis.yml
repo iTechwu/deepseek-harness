@@ -40,8 +40,6 @@
     models:
       - id: !!js "process.env.OPENMONTAGE_AGENT_MODEL_ID || 'deepseek-v4-flash'"
         contextWindow: 128000
-      - id: deepseek-v4-flash
-        contextWindow: 128000
 
 # Managed child-process groups for the bash executor (spawn/kill/output plumbing).
 - id: subprocess

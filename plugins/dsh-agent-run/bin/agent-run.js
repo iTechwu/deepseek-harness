@@ -158,12 +158,14 @@ except Exception as e:
 /** Map the OpenMontage gateway env vars onto the DeepSeek adapter's env vars. */
 function normalizeGatewayEnv() {
   const base = process.env.OPENAI_BASE_URL || process.env.DOFE_MODEL_BASE_URL
-  if (base && !process.env.DEEPSEEK_BASE_URL) {
+  if (base) {
     const raw = base.replace(/\/+$/, '')
+    // ALWAYS override: the DSH harness env may already carry DEEPSEEK_BASE_URL
+    // (e.g. https://api.deepseek.com); the OpenMontage worker must use the dofe gateway.
     process.env.DEEPSEEK_BASE_URL = /\/v1$/.test(raw) ? raw : `${raw}/v1`
   }
   const key = process.env.DOFE_MODEL_API_KEY || process.env.OPENAI_API_KEY
-  if (key && !process.env.DEEPSEEK_API_KEY) process.env.DEEPSEEK_API_KEY = key
+  if (key) process.env.DEEPSEEK_API_KEY = key
   if (!process.env.DEEPSEEK_BASE_URL) {
     throw new Error('dsh-agent-run: no gateway base URL; set OPENAI_BASE_URL or DOFE_MODEL_BASE_URL')
   }

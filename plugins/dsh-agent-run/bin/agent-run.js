@@ -172,21 +172,30 @@ function normalizeGatewayEnv() {
   }
 }
 
-/** Wait until the given agent reports idle (via the agent/status event). */
-function waitForIdle(ctx, agent, timeoutMs) {
+/**
+ * Wait until the agent loop driver reaches idle. This is the canonical wait from
+ * dsh-agent-loop's own tests (agent.spec.ts): `agent.whenIdle()` awaits the
+ * loop's `activityDone` promise, so it resolves only when the driving turn has
+ * actually finished — a `surface`-level 'agent/status' listener is fragile and
+ * can resolve on a stale/other idle. A timeout guard turns an unstarted/hung
+ * turn into a visible error instead of a silent pass.
+ */
+function waitForIdle(agent, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      dispose()
-      reject(new Error(`dsh-agent-run: agent "${agent.id}" did not go idle within ${timeoutMs}ms`))
+      reject(new Error(`dsh-agent-run: agent "${agent.id}" did not reach idle within ${timeoutMs}ms`))
     }, timeoutMs)
-    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
-      if (subject === agent && status === 'idle') {
-        clearTimeout(timer)
-        dispose()
-        resolve()
-      }
-    })
+    agent.whenIdle().then(
+      () => { clearTimeout(timer); resolve() },
+      (error) => { clearTimeout(timer); reject(error) },
+    )
   })
+}
+
+/** Safe string for an error object across LLM/Tool/cancellation failures. */
+function describeError(error) {
+  if (error instanceof Error) return `${error.message}${error.stack ? `\n${error.stack}` : ''}`
+  return String(error)
 }
 
 /** Last assistant text, for the worker's execution log. */
@@ -279,15 +288,26 @@ async function main() {
   //    failure is not fatal here: it still produces a `failed` checkpoint below.
   let ctx
   let agentRan = false
+  const turnErrors = []
   try {
     ctx = await boot(NAME, CONFIG_PATH)
 
+    // Create the agent exactly as dsh-agent-loop's tests do (agent.spec.ts):
+    // provider + model only; the llm-deepseek config (maxTokens/thinking/
+    // reasoningEffort) flows through the adapter's defaults.
     const model = process.env.OPENMONTAGE_AGENT_MODEL_ID || 'deepseek-v4-flash'
-    const maxTokens = Number(process.env.DSH_AGENT_RUN_MAX_TOKENS || 16000)
     const agent = ctx.agentLoop.create(
       SessionId(`openmontage-${projectId}-${stage}-${stageAttempt}-${Date.now()}`),
-      { provider: 'deepseek-official', model, maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : undefined },
+      { provider: 'deepseek-official', model },
     )
+
+    // The agent loop CONTAINS turn failures: ReactLoopAgent.kick() catches them
+    // and leaves the agent idle, so a failed request would otherwise surface as
+    // `finalText() === ''` with no error anywhere. Capture agent/error here so
+    // the real LLM/turn failure reaches stderr instead of failing silently.
+    const offError = ctx.on('agent/error', ({ agent: subject, turn, step, error }) => {
+      if (subject === agent) turnErrors.push(`turn ${turn} step ${step}: ${describeError(error)}`)
+    })
 
     // 7. Drive one turn with the stage prompt.
     agent.followup(createUserMessage({
@@ -296,16 +316,27 @@ async function main() {
     }))
 
     const timeoutMs = Number(process.env.OPENMONTAGE_AGENT_TIMEOUT_SECONDS || 7200) * 1000
-    await waitForIdle(ctx, agent, timeoutMs)
+    await waitForIdle(agent, timeoutMs)
+    offError()
 
     const events = [...agent.session.events]
     const final = finalText(events)
     // Surface the agent's conclusion on stdout for the worker's execution log.
     process.stdout.write(`${final}\n`)
+
+    // Read the last turn/end reason: if it ended in an error (not surfaced via
+    // agent/error, e.g. an early pre-step rejection), report it observably.
+    const lastTurnEnd = events.findLast((event) => event.type === 'turn/end')
+    if (lastTurnEnd?.data?.reason && lastTurnEnd.data.reason.kind === 'error') {
+      turnErrors.push(`turn/end reason: ${describeError(lastTurnEnd.data.reason.error)}`)
+    }
     agentRan = true
   } catch (error) {
     // Boot/create/turn failed; the safety net below writes a failed checkpoint.
-    process.stderr.write(`dsh-agent-run: agent turn failed: ${error.message}\n`)
+    process.stderr.write(`dsh-agent-run: agent turn failed: ${describeError(error)}\n`)
+  }
+  if (turnErrors.length > 0) {
+    process.stderr.write(`dsh-agent-run: agent turn reported ${turnErrors.length} error(s):\n  - ${turnErrors.join('\n  - ')}\n`)
   }
 
   // 8. Compute the authoritative status + artifacts, then write the checkpoint.
@@ -333,9 +364,12 @@ async function main() {
   if (!status) {
     status = 'failed'
     artifacts = {}
-    error = error || (agentRan
+    const noOutcome = agentRan
       ? 'agent produced neither a result manifest nor a terminal checkpoint'
-      : 'agent could not be started/completed for this stage')
+      : 'agent could not be started/completed for this stage'
+    error = error || (turnErrors.length > 0
+      ? `${noOutcome}. Turn error: ${turnErrors.join(' | ')}`
+      : noOutcome)
   }
 
   let checkpointOut = await writeCheckpoint(cwd, python, {

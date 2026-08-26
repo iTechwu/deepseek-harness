@@ -81,8 +81,10 @@ write in_progress checkpoint          # liveness heartbeat (best effort)
 ctx = await boot(NAME, cordis.yml)    # headless spine
 agent = ctx.agentLoop.create(SessionId(...), { provider:'deepseek-official', model })
 agent.followup(createUserMessage({ text: prompt }))
-await waitForIdle(ctx, agent)         # agent/status -> idle
+await agent.whenIdle()                # canonical wait (dsh-agent-loop tests use this)
   # agent is free to run bash: python -c "from tools tool_registry ... .execute({...})"
+# agent/error + turn/end reason are captured and logged to stderr (the loop
+# swallows turn failures -> idle, so without this the real error stays hidden)
 # resolve status/artifacts from result.json || terminal checkpoint
 write_checkpoint(projectsDir, projectId, stage, status, artifacts, pipeline_type=...)
 dispose ctx

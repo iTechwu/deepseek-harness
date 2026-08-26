@@ -73,8 +73,14 @@ after `pnpm install`:
 - [ ] `boot('dsh-agent-run', plugins/dsh-agent-run/cordis.yml)` activates the tree;
       `ctx.agentLoop` exists (`@deepseek-ai/dsh-agent-loop` registers it).
 - [ ] `ctx.agentLoop.create(SessionId(...), { provider:'deepseek-official', model })`
-      yields an agent; `agent.followup(...)` + `waitForIdle` drives one turn and
-      reaches `idle`.
+      yields an agent; `agent.followup(...)` + `await agent.whenIdle()` drives one
+      turn and reaches `idle`. `whenIdle()` is the canonical wait from dsh-agent-loop's
+      own tests (`packages/core/agent-loop/tests/agent.spec.ts:32-39`); a hand-rolled
+      `agent/status` listener is fragile and was replaced.
+- [ ] A turn error is surfaced to stderr. The loop CONTAINS failures
+      (`ReactLoopAgent.kick()` catches → idle, `packages/core/agent-loop/src/agent.ts:210-223`),
+      so `bin/agent-run.js` now listens to `agent/error` and reads the last `turn/end`
+      reason to log the real error, instead of silently reporting "agent produced neither…".
 - [ ] The DeepSeek adapter reads `baseURL`/`apiKeyEnv` from `DEEPSEEK_BASE_URL` /
       `DEEPSEEK_API_KEY` (no credentials plugin mounted) — see
       `packages/llm/llm-deepseek/src/index.ts:359-361,411-432` and

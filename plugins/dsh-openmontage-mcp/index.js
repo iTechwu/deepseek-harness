@@ -26,8 +26,11 @@ const GUIDANCE = `OpenMontage 视频生成：当用户需要生成、复刻或�
    - request.workflow 必须是 pipeline 名（如 "animation"），绝不能是阶段名（compose 是 stage，不是 workflow）；
    - request.input 必须用 TEXT 分支：{"type":"text","inlineText":"<创意brief/概念文本>"}。绝不要用 ARTIFACT 分支 {"type":"artifact","artifactId":"<...>"} 去引用已准备的 project_id（如 clone-...）——project_id 不是 artifact，提交时会被拒绝（OPENMONTAGE_ARTIFACT_INPUT_FAILED）。artifactId 只用于真正经 artifact bridge 上传的文件；
    - 其余按契约：brief/{title,durationSeconds,audience}、output/{container,resolution,fps}、budget/{maxAmount,currency}、clientRequestId（幂等键，重试复用、新任务更换）。
-4. 用 mcp__openmontage__get_video_job / list_video_job_events / approve_video_stage / cancel_video_job 跟踪、审批与取消；
-5. 完成后用 mcp__openmontage__list_video_artifacts 获取产物，并把结果（视频/素材）交付给用户。
+4. 用 mcp__openmontage__get_video_job / list_video_job_events 跟踪任务进度；
+5. 【人工审批 · 禁止自我审批】当 get_video_job 显示某阶段 status=WAITING_APPROVAL 时，严禁直接调用 approve_video_stage。必须：整理该阶段产物摘要（阶段名、产物清单、关键内容，如 proposal 的概念方案与报价 / script 的剧本 / publish 的成品链接），通过飞书审批卡片发给机器人，按钮 value 携带 job_id、stage、expected_sequence（=快照 lastSequence）；发完卡即结束本轮，等待真人在飞书点批准/拒绝；
+6. 只有收到飞书回执（真人点击结果）后，才调用 mcp__openmontage__approve_video_stage 转达：approved 与真人点击严格一致（批准→true / 拒绝→false），expected_sequence 用回执带回的值，idempotency_key 用 {job_id}-{stage}-approval；
+7. 被拒绝后向用户转达失败结果；cancel_video_job 仅用于用户明确要求取消；
+8. 任务完成后用 mcp__openmontage__list_video_artifacts 取产物交付用户。
 
 注意：OpenMontage 是视频专长工具，不要把它用于与视频无关的任务。
 

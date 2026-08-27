@@ -1,0 +1,17 @@
+# dsh-opencli bundle patch.
+# Registers an `opencli` model tool in the dsh web profile. The tool invokes the
+# OpenCLI CLI on the harness host; OpenCLI drives a real Google Chrome session
+# and 100+ site adapters, so the agent can browse/search/extract through either
+# adapters (`opencli twitter search ...`) or the browser driver (`opencli browser
+# navigate --url ...`).
+#
+# Requires Chrome + OpenCLI installed in the harness host (the CI image bakes
+# them in via docker-helm.dofe.ai/jenkins/install-browser-tooling.sh), plus
+# Node >= 20 (already present in the node base image).
+#
+# The command is executed through the harness `shell` service, so it inherits
+# the harness environment; the opencli binary must be on the harness PATH.
+
+- insert:
+    - id: dsh-opencli-tools
+      name: '@dofe/dsh-opencli'

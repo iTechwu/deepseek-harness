@@ -1,0 +1,23 @@
+{
+  "name": "@dofe/dsh-opencli",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle: registers an `opencli` model tool so the harness can drive a real Chrome browser and 100+ site adapters through the OpenCLI CLI.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

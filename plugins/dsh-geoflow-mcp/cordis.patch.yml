@@ -26,9 +26,9 @@
       config:
         transport: streamable-http
         serverName: geoflow
-        url: !!js (process.env.GEOFLOW_MCP_URL || 'http://geo.test.dofe.ai:13104/mcp')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/geoflow')
         headers:
-          Authorization: !!js ('Bearer ' + (process.env.GEOFLOW_MCP_TOKEN || ''))
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:

@@ -3,10 +3,8 @@
 # MCP server over Streamable HTTP and registers its tools under the
 # mcp__openmontage__<tool> namespace.
 #
-# Configuration is read from the process environment at load time (the harness
-# container is where these are injected):
-#   OPENMONTAGE_MCP_URL          -> MCP endpoint (default http://openmontage-mcp:8765/mcp)
-#   OPENMONTAGE_SERVICE_TOKEN    -> Bearer token required by OpenMontage (/mcp tools)
+# The client uses the unified public MCP gateway. It forwards MODELS_API_KEY;
+# the gateway performs Models validation for every request.
 #
 # The harness container runs with host networking (DSH refuses 0.0.0.0 and Nginx
 # proxies via the host loopback), so it cannot use Docker bridge DNS. The OpenMontage
@@ -16,8 +14,7 @@
 #
 # failOnStartupError stays false on purpose: if OpenMontage is briefly down the
 # web profile still boots and the supervisor reconnect loop registers the tools
-# once it comes back. The token is required — set OPENMONTAGE_SERVICE_TOKEN in
-# the deployment env, or tool calls will be rejected with 401.
+# once it comes back. Missing MODELS_API_KEY causes the gateway to reject calls.
 
 - insert:
     - id: mcp-openmontage
@@ -25,10 +22,9 @@
       config:
         transport: streamable-http
         serverName: openmontage
-        url: !!js (process.env.OPENMONTAGE_MCP_URL || 'http://openmontage-mcp:8765/mcp')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/montage')
         headers:
-          Authorization: !!js ('Bearer ' + (process.env.OPENMONTAGE_SERVICE_TOKEN || ''))
-          'X-Dofe-Job-Attribution': !!js (Buffer.from(JSON.stringify({workspace_id:(process.env.OPENMONTAGE_JOB_WORKSPACE_ID||'dsh-dofe'),employee_id:(process.env.OPENMONTAGE_JOB_EMPLOYEE_ID||'dofe-techwu'),runtime_id:(process.env.OPENMONTAGE_JOB_RUNTIME_ID||'dsh-docker'),root_task_id:(process.env.OPENMONTAGE_JOB_ROOT_TASK_ID||'dsh-replicate'),conversation_id:(process.env.OPENMONTAGE_JOB_CONVERSATION_ID||'dsh-web'),source_invocation_id:(process.env.OPENMONTAGE_JOB_INVOCATION_ID||'dsh-api'),trace_id:(process.env.OPENMONTAGE_JOB_TRACE_ID||'dsh-trace')})).toString('base64url'))
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:

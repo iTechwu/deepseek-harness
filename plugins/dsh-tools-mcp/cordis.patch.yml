@@ -4,13 +4,8 @@
 # under the mcp__tools-<domain>__<tool> namespace (e.g.
 # mcp__tools-platform__business_capabilities_list).
 #
-# tools.dofe.ai (FastAPI) mounts a shared /mcp gateway; each business domain is a
-# separate stateless streamable-http endpoint at /mcp/<domain>. The API is
-# published on the CI host loopback at TOOLS_API_PORT (default 13103) and its
-# MCP_ALLOWED_HOSTS already admits 127.0.0.1:* — so the harness (host networking,
-# DSH refuses 0.0.0.0) connects directly to http://127.0.0.1:13103 with no
-# extra_hosts entry and no Authorization header (the MCP server is
-# unauthenticated; the deployment Nginx enforces TOOLS_ALLOWED_CIDRS separately).
+# tools.dofe.ai exposes one domain per route through the unified public MCP
+# gateway. Every client forwards MODELS_API_KEY; the gateway validates it.
 #
 # All nine routes are registered so the model can reach every capability the
 # gateway exposes. If a domain is briefly down the web profile still boots
@@ -24,7 +19,9 @@
       config:
         transport: streamable-http
         serverName: tools-platform
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/platform')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/platform')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -35,7 +32,9 @@
       config:
         transport: streamable-http
         serverName: tools-supply-chain
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/supply-chain')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/supply-chain')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -46,7 +45,9 @@
       config:
         transport: streamable-http
         serverName: tools-talent-discovery
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/talent-discovery')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/talent-discovery')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -57,7 +58,9 @@
       config:
         transport: streamable-http
         serverName: tools-lead-discovery
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/lead-discovery')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/lead-discovery')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -68,7 +71,9 @@
       config:
         transport: streamable-http
         serverName: tools-lead-monitor
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/lead-monitor')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/lead-monitor')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -79,7 +84,9 @@
       config:
         transport: streamable-http
         serverName: tools-hotspot-discovery
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/hotspot-discovery')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/hotspot-discovery')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -90,7 +97,9 @@
       config:
         transport: streamable-http
         serverName: tools-custom-car-monitoring
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/custom-car-monitoring')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/custom-car-monitoring')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -101,7 +110,9 @@
       config:
         transport: streamable-http
         serverName: tools-viral-video
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/viral-video')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/viral-video')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:
@@ -112,7 +123,9 @@
       config:
         transport: streamable-http
         serverName: tools-browser-intelligence
-        url: !!js ((process.env.TOOLS_MCP_BASE_URL || 'http://127.0.0.1:13103') + '/mcp/browser-intelligence')
+        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/tools/browser-intelligence')
+        headers:
+          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:

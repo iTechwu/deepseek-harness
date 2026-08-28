@@ -20,18 +20,10 @@ when to use it.
 
 | Env var | Meaning | Default |
 | --- | --- | --- |
-| `GEOFLOW_MCP_URL` | Geoflow MCP endpoint (`POST /mcp`, stateless JSON-RPC) | `http://geo.test.dofe.ai:13104/mcp` |
-| `GEOFLOW_MCP_TOKEN` | Bearer token geoflow's `mcp.auth` requires (`Authorization: Bearer <token>`) | *(required — see below)* |
+| `MCP_BASE_URL` | Unified MCP gateway base URL | `https://ixicai.cn/mcp` |
+| `MODELS_API_KEY` | Single Models API key sent to the gateway | *(required)* |
 
-`GEOFLOW_MCP_URL`'s host **must be a host geoflow trusts**. Geoflow's
-`EnsureTrustedForwardedHost` middleware aborts the request unless the presented Host equals
-`config('app.url')`'s host or is listed in `GEOFLOW_ADDITIONAL_TRUSTED_HOSTS`. The default host
-(`geo.dofe.ai`) is the production `APP_URL`. If you change the URL to a custom service alias
-(e.g. `geoflow-web-prod`), add that alias to `GEOFLOW_ADDITIONAL_TRUSTED_HOSTS` on the geoflow
-side.
-
-`GEOFLOW_MCP_TOKEN` must be set **in the harness container environment** — geoflow's MCP tools
-authenticate with `Authorization: Bearer <token>`; without it tool calls are rejected.
+The MCP gateway supplies the trusted upstream host and validates `MODELS_API_KEY`; the plugin does not perform a second project-level authentication.
 
 `failOnStartupError` is `false`: if geoflow is briefly unreachable the web profile still boots
 and the reconnect supervisor registers the tools once the server is back.

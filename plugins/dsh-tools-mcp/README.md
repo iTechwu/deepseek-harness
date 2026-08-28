@@ -30,14 +30,13 @@ honour the confirm/`idempotencyKey` contract on side-effecting writes.
 
 | Env var | Meaning | Default |
 | --- | --- | --- |
-| `TOOLS_MCP_BASE_URL` | Base URL of `tools.dofe.ai` API; each domain appends `/mcp/<domain>` | `http://127.0.0.1:13103` |
+| `MCP_BASE_URL` | Unified MCP gateway base URL; each domain appends `/tools/<domain>` | `https://ixicai.cn/mcp` |
+| `MODELS_API_KEY` | Single Models API key sent to the gateway | *(required)* |
 
 The harness runs with host networking (DSH refuses `0.0.0.0`; Nginx proxies via the host
 loopback). `tools.dofe.ai` is published on the CI host loopback at `TOOLS_API_PORT` (default
 `13103`), and its `MCP_ALLOWED_HOSTS` already admits `127.0.0.1:*`, so the harness connects
-directly to `http://127.0.0.1:13103` — no `extra_hosts` entry and no `Authorization` header
-(the MCP server is unauthenticated; the deployment Nginx `TOOLS_ALLOWED_CIDRS` is the access
-boundary). Point `TOOLS_MCP_BASE_URL` at another address if the two run on different hosts.
+The gateway is the only public access boundary. Point `MCP_BASE_URL` at a loopback gateway only for an explicitly isolated CI smoke test.
 
 `failOnStartupError` is `false`: if `tools.dofe.ai` is briefly unreachable the web profile
 still boots and the reconnect supervisor registers the tools once the server is back.

@@ -17,8 +17,8 @@ telling the model when to use it.
 
 | Env var | Meaning | Default |
 |---|---|---|
-| `OPENMONTAGE_MCP_URL` | OpenMontage MCP endpoint | `http://openmontage-mcp:8765/mcp` |
-| `OPENMONTAGE_SERVICE_TOKEN` | Bearer token OpenMontage expects (`Authorization: Bearer <token>`) | *(required — see below)* |
+| `MCP_BASE_URL` | Unified MCP gateway base URL | `https://ixicai.cn/mcp` |
+| `MODELS_API_KEY` | Single Models API key sent to the gateway | *(required)* |
 
 The harness container runs with host networking, which is required by DSH
 (refuses `0.0.0.0`; Nginx proxies via the host loopback). A host-networked
@@ -30,9 +30,7 @@ port (`8765`). The endpoint therefore stays stable and self-describing
 address changes on recreate. Point `OPENMONTAGE_MCP_URL` at another address if
 the two run on different hosts.
 
-`OPENMONTAGE_SERVICE_TOKEN` must be set **in the harness container environment** —
-OpenMontage's job tools authenticate with `Authorization: Bearer <token>`; without
-it tool calls return 401.
+The gateway validates `MODELS_API_KEY`; no OpenMontage service token or job attribution is configured in DSH.
 
 `failOnStartupError` is `false`: if OpenMontage is briefly unreachable the web
 profile still boots and the reconnect supervisor registers the tools once the

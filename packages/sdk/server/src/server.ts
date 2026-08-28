@@ -8,12 +8,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import type { AgentCancelCause } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, type CallId } from '@deepseek-ai/dsh-llm'
-import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
-import { setApprovalPolicy, type ApprovalOutcome, type ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
+import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
@@ -22,115 +20,34 @@ import type {
   InitializeResult,
   JsonRpcTransportPeer,
   SessionEventNotification,
-  SessionCancelledNotification,
-  ApprovalRequestNotification,
-  ApprovalRespondParams,
-  ApprovalRespondResult,
-  SessionApprovalPolicyParams,
-  SessionApprovalPolicyResult,
-  SessionCancelParams,
-  SessionCancelResult,
-  SessionCloseParams,
-  SessionCloseResult,
-  SessionResumeParams,
-  SessionResumeResult,
   SessionPromptParams,
   SessionPromptResult,
+  SdkEncodedImageBlock,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from '@deepseek-ai/dsh-sdk-protocol'
 
 interface SessionRecord {
   handle: AgentHandle
-  environment: Readonly<Record<string, string>>
-  cwd: string
 }
 
-// Task-scoped environment is isolated per session by overlay. The SDK runtime
-// is driven only by the trusted harness host, so the per-session overlay may
-// carry task-scoped Skill/credential/gateway values; it still rejects the
-// loader/interpreter-injection keys that could change how the runtime itself
-// executes (mirrors the host's `stripDeepSeekJsonRpcUnsafeEnvironment`).
-const SESSION_ENVIRONMENT_DENY_KEYS = new Set([
-  'BASH_ENV',
-  'ENV',
-  'GCONV_PATH',
-  'JAVA_TOOL_OPTIONS',
-  'JDK_JAVA_OPTIONS',
-  'LD_AUDIT',
-  'LD_LIBRARY_PATH',
-  'LD_PRELOAD',
-  'NODE_OPTIONS',
-  'NODE_PATH',
-  'PERL5LIB',
-  'PERL5OPT',
-  'PYTHONHOME',
-  'PYTHONPATH',
-  'PYTHONSTARTUP',
-  'RUBYLIB',
-  'RUBYOPT',
-  'ZDOTDIR',
-  '_JAVA_OPTIONS',
-])
-const SESSION_ENVIRONMENT_VALUE_LIMIT = 2048
-
-function normalizeSessionEnvironment(value: unknown): Readonly<Record<string, string>> {
-  if (value === undefined) return {}
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('session environment must be an object')
-  }
-  const result: Record<string, string> = {}
-  for (const [name, raw] of Object.entries(value)) {
-    const normalized = name.toUpperCase()
-    if (SESSION_ENVIRONMENT_DENY_KEYS.has(normalized) || normalized.startsWith('DYLD_')) {
-      throw new Error(`session environment variable is not allowed: ${name}`)
-    }
-    if (typeof raw !== 'string' || raw.length === 0 || raw.length > SESSION_ENVIRONMENT_VALUE_LIMIT) {
-      throw new TypeError(`session environment value for ${name} must be a non-empty bounded string`)
-    }
-    result[name] = raw
-  }
-  return Object.freeze(result)
+function encodedImage(block: SessionPromptParams['contentBlocks'][number]): block is SdkEncodedImageBlock {
+  return block.type === 'image' && 'data' in block
 }
 
-function sameEnvironment(a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean {
-  const aKeys = Object.keys(a)
-  const bKeys = Object.keys(b)
-  return aKeys.length === bKeys.length && aKeys.every(key => a[key] === b[key])
-}
-
-function normalizeSessionCwd(value: unknown, fallback: string): string {
-  if (value === undefined) return fallback
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError('session cwd must be a non-empty string')
-  }
-  return resolve(value)
-}
-
-interface PendingApproval {
-  sessionId: string
-  approvalId: ApprovalRequestId
-  settle: (outcome: ApprovalOutcome) => void
-}
-
-/** Find the newest undecided, unclaimed `approval/asked` id for one ask. */
-function findApprovalId(
-  events: readonly SessionEvent[],
-  callId: CallId | undefined,
-  claimed: ReadonlySet<string>,
-): ApprovalRequestId | undefined {
-  const decided = new Set<ApprovalRequestId>()
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const event = events[i] as SessionEvent
-    if (event.type === 'approval/decided') {
-      decided.add(event.data.id)
-    } else if (event.type === 'approval/asked') {
-      if (decided.has(event.data.id) || claimed.has(String(event.data.id))) continue
-      if ((callId ?? null) !== (event.data.callId ?? null)) continue
-      return event.data.id
-    }
-  }
-  return undefined
+async function durablePromptContent(ctx: Context, blocks: SessionPromptParams['contentBlocks']): Promise<ContentBlock[]> {
+  const images = blocks.filter(encodedImage)
+  if (images.length === 0) return blocks as ContentBlock[]
+  const attachments = ctx.get('attachments')
+  if (attachments === undefined) throw new Error('SDK image prompt requires an attachment store')
+  const refs = await admitEncodedImages(attachments, images.map((image): EncodedImageAttachment => ({
+    data: image.data,
+    mediaType: image.mimeType,
+  })))
+  let next = 0
+  return blocks.map(block => encodedImage(block)
+    ? { type: 'image', attachment: refs[next++] as ImageAttachmentRef }
+    : block)
 }
 
 /** Recover the delegating parent from the service-owned scoped carrier. */
@@ -158,14 +75,15 @@ export class HarnessSdkJsonRpcServer {
   private cwd = process.cwd()
   private provider = 'deepseek-official'
   private model = 'deepseek-official'
+  private reasoningEffort: ReturnType<typeof ReasoningEffortId> | undefined
   private maxTokens: number | undefined
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
-  private readonly pendingApprovals = new Map<string, PendingApproval>()
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
+  private initialized = false
 
   constructor(
     private readonly ctx: Context,
@@ -176,16 +94,6 @@ export class HarnessSdkJsonRpcServer {
     this.disposers.push(ctx.on('session/event', (session, event) => {
       const payload: SessionEventNotification = { sessionId: String(session.id), event }
       this.transport.notify('session.event', payload)
-      if (event.type === 'turn/end' && event.data.reason.kind === 'aborted') {
-        const cause = event.data.reason.reason
-        const cancelled: SessionCancelledNotification = {
-          sessionId: String(session.id),
-          turn: event.data.turn,
-          cause: cause.kind === 'hook' ? 'hook' : cause.kind,
-          ...(cause.kind === 'hook' ? { hookReason: cause.reason } : {}),
-        }
-        this.transport.notify('session.cancelled', cancelled)
-      }
     }))
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       this.transport.notify('session.status', { sessionId: String(agent.session.id), status })
@@ -216,64 +124,47 @@ export class HarnessSdkJsonRpcServer {
       }
       transport.notify('subagent.finished', payload)
     }))
-    this.disposers.push(ctx.on('approval/request', (req, next) => {
-      // Bridge only SDK-owned sessions; foreign asks delegate to the answerer chain.
-      const sessionId = String(req.agent.session.id)
-      if (!this.sessions.has(sessionId)) return next()
-      if (req.signal?.aborted === true) return Promise.resolve<ApprovalOutcome>('cancelled')
-      const claimed = new Set<string>()
-      for (const key of this.pendingApprovals.keys()) claimed.add(key)
-      const approvalId = findApprovalId(req.agent.session.events, req.callId, claimed)
-      if (approvalId === undefined) return next()
-      const key = String(approvalId)
-      this.transport.notify('approval.request', {
-        sessionId,
-        approvalId: key,
-        toolName: req.toolName,
-        ...(req.callId === undefined ? {} : { callId: req.callId }),
-        ...(req.reason === undefined ? {} : { reason: req.reason }),
-      } satisfies ApprovalRequestNotification)
-      return new Promise<ApprovalOutcome>((resolve) => {
-        let settled = false
-        const onAbort = (): void => { settle('cancelled') }
-        const settle = (outcome: ApprovalOutcome): void => {
-          if (settled) return
-          settled = true
-          this.pendingApprovals.delete(key)
-          req.signal?.removeEventListener('abort', onAbort)
-          resolve(outcome)
-        }
-        req.signal?.addEventListener('abort', onAbort, { once: true })
-        this.pendingApprovals.set(key, { sessionId, approvalId, settle })
-      })
-    }))
   }
 
   /**
-   * Configure the SDK route, mounting the DeepSeek fallback only when unowned.
+   * Validate and configure the SDK route, mounting the DeepSeek fallback only when unowned.
    * @param params - SDK handshake parameters.
    * @returns server identity for the handshake.
    */
   async initialize(params: InitializeParams): Promise<InitializeResult> {
-    if (params.protocolVersions !== undefined
-      && (!Array.isArray(params.protocolVersions) || !params.protocolVersions.includes('2.0'))) {
-      throw new TypeError('initialize does not support any requested protocol version')
+    if (params.reasoningEffort !== undefined
+      && (typeof params.reasoningEffort !== 'string' || params.reasoningEffort.length === 0)) {
+      throw new TypeError('initialize reasoningEffort must be a non-empty string')
     }
     if (params.maxTokens !== undefined
       && (!Number.isSafeInteger(params.maxTokens) || params.maxTokens <= 0)) {
       throw new TypeError('initialize maxTokens must be a positive safe integer')
     }
-    this.cwd = resolve(params.cwd)
-    this.provider = params.provider
-    this.model = params.model
+    const cwd = resolve(params.cwd)
+    const provider = params.provider
+    const model = params.model
+    const reasoningEffort = params.reasoningEffort === undefined
+      ? undefined
+      : ReasoningEffortId(params.reasoningEffort)
+    if (!this.hasAdapterFor(provider)) {
+      if (provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${provider}"`)
+      this.llmFiber = await this.ctx.plugin(LlmDeepSeek, {})
+    }
+    // Adapter presence was read from this service above; a successful fallback mount also requires it.
+    const llm = this.ctx.get('llm') as LlmRuntime
+    await llm.resolveCallConfig({
+      provider,
+      model,
+      ...reasoningEffort === undefined ? {} : { reasoningEffort },
+      ...params.maxTokens === undefined ? {} : { maxTokens: params.maxTokens },
+    })
+    this.cwd = cwd
+    this.provider = provider
+    this.model = model
+    this.reasoningEffort = reasoningEffort
     this.maxTokens = params.maxTokens
-    if (!this.hasAdapterFor(this.provider) && this.provider !== 'deepseek-official') {
-      throw new Error(`no adapter registered for provider "${this.provider}"`)
-    }
-    return {
-      serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
-      ...(params.protocolVersions ? { protocolVersion: '2.0' } : {}),
-    }
+    this.initialized = true
+    return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
   }
 
   /**
@@ -282,77 +173,28 @@ export class HarnessSdkJsonRpcServer {
    * @returns the durable message identity.
    */
   async prompt(params: SessionPromptParams): Promise<SessionPromptResult> {
-    const environment = normalizeSessionEnvironment(params.environment)
-    const cwd = normalizeSessionCwd(params.cwd, this.cwd)
-    const rec = await this.getOrCreateSession(params.sessionId, environment, cwd)
+    if (!this.initialized) throw new Error('SDK server is not initialized')
+    const rec = await this.getOrCreateSession(params.sessionId)
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
-    // record against the live registry before delivery (as the ACP bridge does).
-    if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
-      throw new Error(`session agent was disposed outside the server: ${params.sessionId}`)
-    }
-    const message = createUserMessage({ content: params.contentBlocks, source: { kind: 'user' } })
+    // record against the live registry before delivery.
+    this.assertLiveAgent(rec, params.sessionId)
+    const content = await durablePromptContent(this.ctx, params.contentBlocks)
+    // Attachment admission crosses an async boundary where shutdown or an
+    // agent-loop reload may detach the retained handle.
+    this.assertLiveAgent(rec, params.sessionId)
+    const message = createUserMessage({
+      content,
+      source: { kind: 'user' },
+    })
     rec.handle.agent.followup(message)
     return { messageId: message.id }
   }
 
-  /** Abort active work for one live session and retain the runtime process. */
-  async cancel(params: SessionCancelParams): Promise<SessionCancelResult> {
-    const rec = this.sessions.get(params.sessionId)
-    if (rec === undefined) throw new Error(`unknown SDK session: ${params.sessionId}`)
-    const cause: AgentCancelCause = params.reason === 'parent'
-      ? { kind: 'parent' }
-      : params.reason === 'timeout' || params.reason === 'operator'
-        ? { kind: 'hook', reason: params.reason }
-        : { kind: 'user' }
-    rec.handle.agent.cancel(cause, { keepInbox: params.keepInbox === true })
-    return { cancelled: true }
-  }
-
-  /** Load a persisted session through the agent factory's resume path. */
-  async resume(params: SessionResumeParams): Promise<SessionResumeResult> {
-    if (this.sessions.has(params.sessionId)) return { sessionId: params.sessionId, resumed: true }
-    if (this.shuttingDown) throw new Error('SDK server is shutting down')
-    const handle = await this.ctx.agents.resume({
-      resumeSessionId: SessionId(params.sessionId),
-      agentOptions: {
-        provider: this.provider,
-        model: this.model,
-        ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
-      },
-      setup: async (agentCtx) => {
-        if (this.provider === 'deepseek-official' && !this.hasAdapterFor(agentCtx)) {
-          await agentCtx.plugin(LlmDeepSeek, {})
-        }
-      },
-    })
-    this.sessions.set(params.sessionId, { handle, environment: {}, cwd: String(handle.agent.session.header.cwd ?? this.cwd) })
-    return { sessionId: params.sessionId, resumed: true }
-  }
-
-  /** Persist a session-scoped approval policy through the existing service. */
-  async approvalPolicy(params: SessionApprovalPolicyParams): Promise<SessionApprovalPolicyResult> {
-    const rec = this.sessions.get(params.sessionId)
-    if (rec === undefined) throw new Error(`unknown SDK session: ${params.sessionId}`)
-    setApprovalPolicy(rec.handle.agent.session, params.policy)
-    return { sessionId: params.sessionId, policy: params.policy }
-  }
-
-  /** Dispose one live session without shutting down the runtime process. */
-  async closeSession(params: SessionCloseParams): Promise<SessionCloseResult> {
-    const rec = this.sessions.get(params.sessionId)
-    if (rec === undefined) throw new Error(`unknown SDK session: ${params.sessionId}`)
-    this.sessions.delete(params.sessionId)
-    await rec.handle.dispose()
-    return { sessionId: params.sessionId, closed: true }
-  }
-
-  /** Resolve one pending approval question with the host's outcome. */
-  approvalRespond(params: ApprovalRespondParams): ApprovalRespondResult {
-    const pending = this.pendingApprovals.get(params.approvalId)
-    if (pending === undefined) throw new Error(`unknown approval: ${params.approvalId}`)
-    pending.settle(params.outcome)
-    return { sessionId: params.sessionId, approvalId: params.approvalId, outcome: params.outcome }
+  private assertLiveAgent(rec: SessionRecord, sessionId: string): void {
+    if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
+      throw new Error(`session agent was disposed outside the server: ${sessionId}`)
+    }
   }
 
   /**
@@ -367,8 +209,6 @@ export class HarnessSdkJsonRpcServer {
 
   private async performShutdown(): Promise<Record<string, never>> {
     this.shuttingDown = true
-    for (const pending of [...this.pendingApprovals.values()]) pending.settle('cancelled')
-    this.pendingApprovals.clear()
     const pendingCreations = [...this.sessionCreations.values()]
     await Promise.allSettled(pendingCreations)
     this.sessionCreations.clear()
@@ -408,16 +248,6 @@ export class HarnessSdkJsonRpcServer {
         return this.initialize(params as unknown as InitializeParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
-      case 'session/cancel':
-        return this.cancel(params as unknown as SessionCancelParams)
-      case 'session/resume':
-        return this.resume(params as unknown as SessionResumeParams)
-      case 'session/approval-policy':
-        return this.approvalPolicy(params as unknown as SessionApprovalPolicyParams)
-      case 'session/close':
-        return this.closeSession(params as unknown as SessionCloseParams)
-      case 'approval/respond':
-        return this.approvalRespond(params as unknown as ApprovalRespondParams)
       case 'shutdown':
         return this.shutdown()
       default:
@@ -425,21 +255,13 @@ export class HarnessSdkJsonRpcServer {
     }
   }
 
-  private async getOrCreateSession(sessionId: string, environment: Readonly<Record<string, string>>, cwd: string): Promise<SessionRecord> {
+  private async getOrCreateSession(sessionId: string): Promise<SessionRecord> {
     if (this.shuttingDown) throw new Error('SDK server is shutting down')
     const existing = this.sessions.get(sessionId)
-    if (existing) {
-      if (!sameEnvironment(existing.environment, environment)) {
-        throw new Error(`session environment is immutable after creation: ${sessionId}`)
-      }
-      if (existing.cwd !== cwd) {
-        throw new Error(`session cwd is immutable after creation: ${sessionId}`)
-      }
-      return existing
-    }
+    if (existing) return existing
     const pending = this.sessionCreations.get(sessionId)
     if (pending) return pending
-    const creation = this.createSession(sessionId, environment, cwd)
+    const creation = this.createSession(sessionId)
     this.sessionCreations.set(sessionId, creation)
     void creation.then(
       () => { this.sessionCreations.delete(sessionId) },
@@ -448,40 +270,27 @@ export class HarnessSdkJsonRpcServer {
     return creation
   }
 
-  private async createSession(sessionId: string, environment: Readonly<Record<string, string>>, cwd: string): Promise<SessionRecord> {
+  private async createSession(sessionId: string): Promise<SessionRecord> {
     // No preset composition: this server's compositions keep the model-facing
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(sessionId),
-      meta: { cwd },
+      meta: { cwd: this.cwd },
       agentOptions: {
         provider: this.provider,
         model: this.model,
+        ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
         ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
       },
-      setup: async (agentCtx) => {
-        if (Object.keys(environment).length > 0) {
-          if (this.hasAdapterFor(agentCtx)) {
-            throw new Error('session environment requires an unowned scoped DeepSeek adapter')
-          }
-          const values = { ...process.env as Record<string, string>, ...environment }
-          agentCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([{ source: 'process', values }]))
-        }
-        if (this.provider === 'deepseek-official' && !this.hasAdapterFor(agentCtx)) {
-          await agentCtx.plugin(LlmDeepSeek, {})
-        }
-      },
     })
-    const rec: SessionRecord = { handle, environment, cwd }
+    const rec: SessionRecord = { handle }
     this.sessions.set(sessionId, rec)
     return rec
   }
 
-  private hasAdapterFor(subject: string | Context): boolean {
-    const ctx = typeof subject === 'string' ? this.ctx : subject
-    const provider = typeof subject === 'string' ? subject : this.provider
-    return ctx.get('llm')?.listProviders().some(entry => entry.id === provider) ?? false
+  private hasAdapterFor(provider: string): boolean {
+    return this.ctx.get('llm')?.listProviders().some(entry => entry.id === provider) ?? false
   }
 }

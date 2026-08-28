@@ -18,15 +18,11 @@ import {
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
-  type SessionApprovalPolicyParams,
-  type SessionCancelParams,
-  type SessionCloseParams,
-  type ApprovalRespondParams,
-  type SessionResumeParams,
   type SessionPromptParams,
+  type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-protocol'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { disposeRuntimeProcess } from './dispose.ts'
+import { resolveDshLaunch, type RuntimeProcessOptions } from './launch.ts'
 import type { HarnessClientOptions, HarnessNotification, NotificationFilter } from './types.ts'
 
 /** Retained stderr lines used to diagnose an unexpected runtime death. */
@@ -149,7 +145,7 @@ class NotificationSubscriptionImpl implements NotificationSubscription {
    * Deliver one notification to a waiter or the queue when the filter
    * matches. A throwing filter fails only THIS subscription (detached, the
    * throw becomes its terminal error) — it never disturbs sibling
-   * subscriptions or the transport's read loop, mirroring the Python client.
+   * subscriptions or the transport's read loop.
    * @param notification - the wire notification to deliver.
    */
   push(notification: HarnessNotification): void {
@@ -187,6 +183,9 @@ class NotificationSubscriptionImpl implements NotificationSubscription {
  * runtime is closed.
  */
 export class HarnessClient {
+  /** Original public dsh launch and timeout options for this client. */
+  readonly options: HarnessClientOptions
+  private readonly runtime: RuntimeProcessOptions
   private child: ChildProcess | undefined
   private transport: JsonRpcLineTransport | undefined
   private readonly stderrTail: string[] = []
@@ -198,8 +197,12 @@ export class HarnessClient {
   private streamsSettled: Promise<void> = Promise.resolve()
   private closeTask: Promise<void> | undefined
 
-  /** @param options - launch spec, complete child environment, and timeouts. */
-  constructor(readonly options: HarnessClientOptions) {}
+  /** @param options - dsh profile, patch, home, process, environment, and timeout options. */
+  constructor(options?: HarnessClientOptions)
+  constructor(options: HarnessClientOptions = {}, runtime?: RuntimeProcessOptions) {
+    this.options = options
+    this.runtime = runtime ?? resolveDshLaunch(options)
+  }
 
   /**
    * Spawn the runtime subprocess and start reading frames. Idempotent while
@@ -208,9 +211,9 @@ export class HarnessClient {
   start(): void {
     if (this.closeTask !== undefined) throw new TransportClosedError('DeepSeek Harness runtime client is closed')
     if (this.child !== undefined) return
-    const child = spawn(this.options.command, this.options.args ?? [], {
-      cwd: this.options.cwd,
-      env: this.options.env ?? process.env,
+    const child = spawn(this.runtime.command, this.runtime.args, {
+      cwd: this.runtime.cwd,
+      env: this.runtime.environment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.child = child
@@ -271,18 +274,12 @@ export class HarnessClient {
    * @returns the runtime's wire identity.
    */
   async initialize(params: InitializeParams): Promise<InitializeResult> {
-    const result = await this.request('initialize', { ...params })
+    const result = await this.request('initialize', { ...params }, this.runtime.initializeTimeoutMs)
     if (!isRecord(result) || !isRecord(result.serverInfo)
       || typeof result.serverInfo.name !== 'string' || typeof result.serverInfo.version !== 'string') {
       throw new SdkProtocolError(`initialize returned no server identity: ${JSON.stringify(result)}`)
     }
-    if (params.protocolVersions !== undefined && result.protocolVersion !== '2.0') {
-      throw new SdkProtocolError(`initialize did not negotiate protocol 2.0: ${JSON.stringify(result)}`)
-    }
-    return {
-      serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
-      ...(typeof result.protocolVersion === 'string' ? { protocolVersion: result.protocolVersion } : {}),
-    }
+    return { serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version } }
   }
 
   /**
@@ -291,57 +288,13 @@ export class HarnessClient {
    * @param contentBlocks - the user message, sent verbatim.
    * @returns the queued message id.
    */
-  async prompt(sessionId: string, contentBlocks: ContentBlock[], environment?: Readonly<Record<string, string>>): Promise<string> {
-    const params: SessionPromptParams = { sessionId, contentBlocks, ...environment === undefined ? {} : { environment } }
+  async prompt(sessionId: string, contentBlocks: SdkPromptContentBlock[]): Promise<string> {
+    const params: SessionPromptParams = { sessionId, contentBlocks }
     const result = await this.request('session/prompt', { ...params })
     if (!isRecord(result) || typeof result.messageId !== 'string') {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
     }
     return result.messageId
-  }
-
-  /** Cancel active work for one session without closing the runtime process. */
-  async cancel(sessionId: string, options: Omit<SessionCancelParams, 'sessionId'> = {}): Promise<boolean> {
-    const result = await this.request('session/cancel', { sessionId, ...options })
-    if (!isRecord(result) || result.cancelled !== true) {
-      throw new SdkProtocolError(`session/cancel returned no cancellation receipt: ${JSON.stringify(result)}`)
-    }
-    return true
-  }
-
-  /** Resume one persisted session in the current runtime process. */
-  async resume(sessionId: string): Promise<void> {
-    const result = await this.request('session/resume', { sessionId } satisfies SessionResumeParams)
-    if (!isRecord(result) || result.sessionId !== sessionId || result.resumed !== true) {
-      throw new SdkProtocolError(`session/resume returned no resume receipt: ${JSON.stringify(result)}`)
-    }
-  }
-
-  /** Change the durable approval policy for one live session. */
-  async setApprovalPolicy(sessionId: string, policy: SessionApprovalPolicyParams['policy']): Promise<void> {
-    const result = await this.request('session/approval-policy', { sessionId, policy } satisfies SessionApprovalPolicyParams)
-    if (!isRecord(result) || result.sessionId !== sessionId || result.policy !== policy) {
-      throw new SdkProtocolError(`session/approval-policy returned no policy receipt: ${JSON.stringify(result)}`)
-    }
-  }
-
-  /** Dispose one live session without closing the runtime process. */
-  async closeSession(sessionId: string): Promise<void> {
-    const result = await this.request('session/close', { sessionId } satisfies SessionCloseParams)
-    if (!isRecord(result) || result.sessionId !== sessionId || result.closed !== true) {
-      throw new SdkProtocolError(`session/close returned no close receipt: ${JSON.stringify(result)}`)
-    }
-  }
-
-  /** Answer one pending approval question. */
-  async respondApproval(params: ApprovalRespondParams): Promise<void> {
-    const result = await this.request('approval/respond', { ...params })
-    if (!isRecord(result)
-      || result.sessionId !== params.sessionId
-      || result.approvalId !== params.approvalId
-      || result.outcome !== params.outcome) {
-      throw new SdkProtocolError(`approval/respond returned no response receipt: ${JSON.stringify(result)}`)
-    }
   }
 
   /**
@@ -364,7 +317,7 @@ export class HarnessClient {
     const transport = this.transport
     /* v8 ignore next -- start() either sets the transport or throws */
     if (transport === undefined) throw new TransportClosedError('DeepSeek Harness runtime is not running')
-    const timeout = timeoutMs ?? this.options.requestTimeoutMs
+    const timeout = timeoutMs ?? this.runtime.requestTimeoutMs
     try {
       if (timeout === undefined) return await transport.request(method, params ?? {})
       // The abort signal makes the timeout an abandonment: the transport drops
@@ -372,7 +325,8 @@ export class HarnessClient {
       // retain no per-call state (the server-side work still runs to close).
       const abandon = new AbortController()
       const timer = setTimeout(() => {
-        abandon.abort(new RequestTimeoutError(`${method} timed out after ${timeout}ms waiting for the DeepSeek Harness runtime`))
+        const stderr = this.stderrTail.length === 0 ? '' : `; stderr tail:\n${this.stderrTail.join('\n')}`
+        abandon.abort(new RequestTimeoutError(`${method} timed out after ${timeout}ms waiting for ${this.runtime.description}${stderr}`))
       }, timeout)
       try {
         return await transport.request(method, params ?? {}, abandon.signal)
@@ -408,8 +362,8 @@ export class HarnessClient {
 
   /**
    * Subscribe to one session and the descendants discovered from
-   * `subagent.started` lineage edges (the runtime notifies for every session
-   * in its context; scoping is client-side, mirroring the Python SDK).
+   * `subagent.started` lineage edges. The runtime notifies for every session
+   * in its context, so this client applies the scope.
    * @param sessionId - the root session id.
    * @returns the filtered subscription handle.
    */
@@ -441,15 +395,15 @@ export class HarnessClient {
     const child = this.child
     if (child === undefined) return
     try {
-      await this.request('shutdown', undefined, this.options.shutdownTimeoutMs ?? 1_000)
+      await this.request('shutdown', undefined, this.runtime.shutdownTimeoutMs ?? 1_000)
     } catch (error) {
       // Diagnostic only: the dispose ladder below is the authoritative teardown
       // for a runtime that cannot answer shutdown anymore.
       this.appendStderr([`shutdown request failed: ${errorMessage(error)}`])
     }
     await disposeRuntimeProcess(child, {
-      disposeEofGraceMs: this.options.disposeEofGraceMs ?? 6_000,
-      disposeGraceMs: this.options.disposeGraceMs ?? 3_000,
+      disposeEofGraceMs: this.runtime.disposeEofGraceMs ?? 6_000,
+      disposeGraceMs: this.runtime.disposeGraceMs ?? 3_000,
     })
     this.transport?.close()
     this.failSubscriptions(this.closedError('DeepSeek Harness runtime closed'))
@@ -504,12 +458,21 @@ export class HarnessClient {
   }
 
   private closedError(reason: string): TransportClosedError {
-    const parts = [reason]
+    const parts = [`${this.runtime.description}: ${reason}`]
     if (this.spawnError !== undefined) parts.push(`spawn error: ${this.spawnError.message}`)
     if (this.exitCode !== undefined) parts.push(`exit code: ${String(this.exitCode)}`)
     if (this.stderrTail.length > 0) parts.push(`stderr tail:\n${this.stderrTail.join('\n')}`)
     return new TransportClosedError(parts.join('\n'))
   }
+}
+
+/** Construct the transport against a generic process for package-local fake-runtime tests. */
+export function createProcessHarnessClient(options: RuntimeProcessOptions): HarnessClient {
+  const Constructor = HarnessClient as unknown as new (
+    publicOptions: HarnessClientOptions,
+    runtime: RuntimeProcessOptions,
+  ) => HarnessClient
+  return new Constructor({}, options)
 }
 
 /**

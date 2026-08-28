@@ -1,4 +1,5 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -8,8 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent, type AgentHandle } from '@deepseek-ai/dsh-agent'
 
-import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
@@ -79,7 +79,7 @@ async function settleSubagent(
   const result = Promise.withResolvers<SubagentResult>()
   const disposeProvider = ctx.subagents.registerProvider({
     name: info.provider,
-    capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+    capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
     inheritsParentContext: false,
     async start() {
       return {
@@ -110,17 +110,6 @@ async function settleSubagent(
 }
 
 describe('HarnessSdkJsonRpcServer', () => {
-  it('rejects an initialize request without a supported protocol version', async () => {
-    const ctx = await makeHarness(await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-version-')))
-    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-    await expect(server.initialize({
-      cwd: '.',
-      provider: 'deepseek-official',
-      model: 'model',
-      protocolVersions: ['9.9'],
-    })).rejects.toThrow('does not support any requested protocol version')
-  })
-
   it('creates a harness agent and calls the configured OpenAI-compatible endpoint', { timeout: 15_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-'))
     const llmServer = await mockCompletionServer()
@@ -135,6 +124,7 @@ describe('HarnessSdkJsonRpcServer', () => {
         cwd: storageDir,
         provider: 'deepseek-official',
         model: 'dsagent-model',
+        reasoningEffort: 'max',
         maxTokens: 321,
       }) as { serverInfo: { name: string } }
       expect(init.serverInfo.name).toBe('deepseek-harness-sdk-runtime')
@@ -146,8 +136,14 @@ describe('HarnessSdkJsonRpcServer', () => {
       expect((receipt as { messageId?: unknown }).messageId).toBeTypeOf('string')
 
       await vi.waitFor(() => { expect(llmServer.requests).toHaveLength(1) })
-      const body = llmServer.requests[0] as { model: string; messages: { role: string }[]; max_tokens?: number }
+      const body = llmServer.requests[0] as {
+        model: string
+        messages: { role: string }[]
+        reasoning_effort?: string
+        max_tokens?: number
+      }
       expect(body.model).toBe('dsagent-model')
+      expect(body.reasoning_effort).toBe('max')
       expect(body.max_tokens).toBe(321)
       expect(body.messages[0]?.role).toBe('system')
       expect(body.messages.at(-1)?.role).toBe('user')
@@ -205,6 +201,8 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
     const prompt = (sessionId: string, text: string) => server.prompt({
       sessionId,
       contentBlocks: [{ type: 'text', text }],
@@ -221,65 +219,98 @@ describe('HarnessSdkJsonRpcServer', () => {
     expect(otherHandle.dispose).toHaveBeenCalledOnce()
   })
 
-  it('exposes cancel and approval-policy as session-owned wire operations', async () => {
-    const cancel = vi.fn()
-    const append = vi.fn()
-    const agent = {
-      id: SessionId('wire-control'),
-      session: { events: [], append },
-      followup: vi.fn(),
-      cancel,
-    } as unknown as Agent
+  it('admits inline SDK images before the user message enters the session', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({ id: SessionId('image'), followup } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
     const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ref = {
+      attachmentId: 'sha256:image',
+      mediaType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    }
+    const saveImages = vi.fn(async () => [ref])
     const ctx = {
       on: vi.fn(() => () => undefined),
-      get: () => undefined,
-      agents: {
-        create: vi.fn(async () => handle),
-        get: () => agent,
-      },
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+      get: (name: string) => name === 'attachments' ? { saveImages } : undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
-    await server.prompt({ sessionId: 'wire-control', contentBlocks: [{ type: 'text', text: 'hello' }] })
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
 
-    await expect(server.cancel({ sessionId: 'wire-control', reason: 'operator', keepInbox: true }))
-      .resolves.toEqual({ cancelled: true })
-    expect(cancel).toHaveBeenCalledWith({ kind: 'hook', reason: 'operator' }, { keepInbox: true })
-    await expect(server.approvalPolicy({ sessionId: 'wire-control', policy: 'never' }))
-      .resolves.toEqual({ sessionId: 'wire-control', policy: 'never' })
-    expect(append).toHaveBeenCalledWith('approval/policy', { policy: 'never' })
+    await server.prompt({
+      sessionId: 'image',
+      contentBlocks: [
+        { type: 'text', text: 'inspect' },
+        { type: 'image', data: 'AQ==', mimeType: 'image/png' },
+      ],
+    })
+
+    expect(saveImages).toHaveBeenCalledWith([{ data: Uint8Array.of(1), mediaType: 'image/png' }])
+    expect(followup.mock.calls[0]?.[0].content).toEqual([
+      { type: 'text', text: 'inspect' },
+      { type: 'image', attachment: ref },
+    ])
     await server.shutdown()
   })
 
-  it('closes one live session without shutting down the runtime', async () => {
-    const agent = {
-      id: SessionId('wire-close'),
-      session: { events: [] },
-      followup: vi.fn(),
-      cancel: vi.fn(),
-    } as unknown as Agent
+  it('rejects inline SDK images when the composition has no attachment store', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({ id: SessionId('image'), followup } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
     const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
     const ctx = {
       on: vi.fn(() => () => undefined),
+      agents: { create: vi.fn(async () => handle), get: () => agent },
       get: () => undefined,
-      agents: {
-        create: vi.fn(async () => handle),
-        get: () => agent,
-      },
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
-    await server.prompt({ sessionId: 'wire-close', contentBlocks: [{ type: 'text', text: 'hello' }] })
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
 
-    await expect(server.closeSession({ sessionId: 'wire-close' }))
-      .resolves.toEqual({ sessionId: 'wire-close', closed: true })
-    expect(handle.dispose).toHaveBeenCalledOnce()
-
-    await expect(server.closeSession({ sessionId: 'wire-close' }))
-      .rejects.toThrow('unknown SDK session: wire-close')
+    await expect(server.prompt({
+      sessionId: 'image',
+      contentBlocks: [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }],
+    })).rejects.toThrow('SDK image prompt requires an attachment store')
+    expect(followup).not.toHaveBeenCalled()
     await server.shutdown()
-    expect(handle.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('rechecks agent liveness after asynchronous image admission', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({ id: SessionId('image-race'), followup } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const admitted = Promise.withResolvers<Array<{
+      attachmentId: string
+      mediaType: string
+      bytes: number
+    }>>()
+    const saveImages = vi.fn(() => admitted.promise)
+    let live = true
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: {
+        create: vi.fn(async () => handle),
+        get: () => live ? agent : undefined,
+      },
+      get: (name: string) => name === 'attachments' ? { saveImages } : undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
+
+    const prompting = server.prompt({
+      sessionId: 'image-race',
+      contentBlocks: [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }],
+    })
+    await vi.waitFor(() => { expect(saveImages).toHaveBeenCalledOnce() })
+    live = false
+    admitted.resolve([{ attachmentId: 'sha256:image', mediaType: 'image/png', bytes: 1 }])
+
+    await expect(prompting).rejects.toThrow('session agent was disposed outside the server: image-race')
+    expect(followup).not.toHaveBeenCalled()
+    await server.shutdown()
   })
 
   it('rejects a prompt for a session whose agent was disposed outside the server', async () => {
@@ -302,6 +333,8 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
     const prompt = (text: string) => server.prompt({
       sessionId: 'zombie',
       contentBlocks: [{ type: 'text', text }],
@@ -337,99 +370,6 @@ describe('HarnessSdkJsonRpcServer', () => {
       ])
     await server.shutdown()
     await ctx.fiber.dispose()
-  })
-
-  it('emits session.cancelled when a turn ends aborted', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
-    const transport = new FakeTransport()
-    const server = new HarnessSdkJsonRpcServer(ctx, transport)
-    const session = ctx.sessions.create(SessionId('cancelled-turn'))
-
-    ctx.emit('session/event', session, { type: 'turn/end', seq: 0, time: 0, data: { turn: 3, reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'operator' } } } } as SessionEvent)
-
-    expect(transport.notifications).toContainEqual({
-      method: 'session.cancelled',
-      params: { sessionId: 'cancelled-turn', turn: 3, cause: 'hook', hookReason: 'operator' },
-    })
-    await server.shutdown()
-    await ctx.fiber.dispose()
-  })
-
-  it('bridges an SDK-owned approval ask to the host and answers it', async () => {
-    const captured = new Map<string, (...args: never[]) => unknown>()
-    const agent = {
-      id: SessionId('approval-bridge'),
-      session: { id: SessionId('approval-bridge'), events: [{ type: 'approval/asked', seq: 0, time: 0, data: { id: 'ask-1', toolName: 'bash' } }] },
-      followup: vi.fn(),
-      cancel: vi.fn(),
-    } as unknown as Agent
-    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
-    const ctx = {
-      on: vi.fn((name: string, handler: (...args: never[]) => unknown) => {
-        captured.set(name, handler)
-        return () => undefined
-      }),
-      get: () => undefined,
-      agents: {
-        create: vi.fn(async () => handle),
-        get: () => agent,
-      },
-    } as unknown as Context
-    const transport = new FakeTransport()
-    const server = new HarnessSdkJsonRpcServer(ctx, transport)
-    await server.initialize({ cwd: '/tmp', provider: 'deepseek-official', model: 'model' })
-    await server.prompt({ sessionId: 'approval-bridge', contentBlocks: [{ type: 'text', text: 'hello' }] })
-
-    const answerer = captured.get('approval/request') as ((req: { agent: Agent; toolName: string; callId?: string; reason?: string; signal?: AbortSignal }, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>) | undefined
-    expect(answerer).toBeTypeOf('function')
-    const outcome = answerer!({ agent, toolName: 'bash' }, () => Promise.resolve('unavailable' as const))
-
-    expect(transport.notifications).toContainEqual({
-      method: 'approval.request',
-      params: { sessionId: 'approval-bridge', approvalId: 'ask-1', toolName: 'bash' },
-    })
-    server.approvalRespond({ sessionId: 'approval-bridge', approvalId: 'ask-1', outcome: 'allowed-once' })
-    await expect(outcome).resolves.toBe('allowed-once')
-    await server.shutdown()
-  })
-
-  it('allows task-scoped session environment and rejects injection keys', async () => {
-    const agent = { id: SessionId('env-scope'), session: { events: [] }, followup: vi.fn(), cancel: vi.fn() } as unknown as Agent
-    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
-    const ctx = {
-      on: vi.fn(() => () => undefined),
-      get: () => undefined,
-      agents: { create: vi.fn(async () => handle), get: () => agent },
-    } as unknown as Context
-    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-
-    await expect(server.prompt({
-      sessionId: 'env-scope',
-      contentBlocks: [{ type: 'text', text: 'hello' }],
-      environment: { DEEPSEEK_API_KEY: 'task-key', DEEPSEEK_BASE_URL: 'https://gw/v1', MY_SKILL_TOKEN: 'skill-secret' },
-    })).resolves.toMatchObject({ messageId: expect.any(String) })
-
-    await expect(server.prompt({
-      sessionId: 'env-inject',
-      contentBlocks: [{ type: 'text', text: 'hello' }],
-      environment: { LD_PRELOAD: '/evil.so' },
-    })).rejects.toThrow('session environment variable is not allowed: LD_PRELOAD')
-
-    await server.shutdown()
-  })
-
-  it('rejects an approval response for an unknown approval id', async () => {
-    const ctx = {
-      on: vi.fn(() => () => undefined),
-      get: () => undefined,
-      agents: { create: vi.fn(), get: () => undefined },
-    } as unknown as Context
-    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-    expect(() => server.approvalRespond({ sessionId: 'nope', approvalId: 'missing', outcome: 'rejected' }))
-      .toThrow('unknown approval: missing')
-    await server.shutdown()
   })
 
   it('notifies the host when a child session is created with parent lineage', async () => {
@@ -663,7 +603,7 @@ describe('HarnessSdkJsonRpcServer', () => {
       let currentLocalAgent = oldChild.agent
       const disposeProvider = ctx.subagents.registerProvider({
         name: 'reused',
-        capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+        capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
         inheritsParentContext: false,
         start() {
           const result = results[starts]
@@ -758,7 +698,7 @@ describe('HarnessSdkJsonRpcServer', () => {
       const remoteResult = Promise.withResolvers<SubagentResult>()
       const unregisterLocal = ctx.subagents.registerProvider({
         name: 'reused-provider',
-        capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+        capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
         inheritsParentContext: false,
         start: () => Promise.resolve({
           id: SessionId('provider-reuse-child'),
@@ -776,7 +716,7 @@ describe('HarnessSdkJsonRpcServer', () => {
 
       const unregisterRemote = ctx.subagents.registerProvider({
         name: 'reused-provider',
-        capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+        capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
         inheritsParentContext: false,
         start: () => Promise.resolve({
           id: SessionId('provider-reuse-child'),
@@ -856,7 +796,7 @@ describe('HarnessSdkJsonRpcServer', () => {
       const missedStartResult = Promise.withResolvers<SubagentResult>()
       const disposeMissedStartProvider = ctx.subagents.registerProvider({
         name: 'fork',
-        capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+        capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
         inheritsParentContext: true,
         start: () => Promise.resolve({
           id: SessionId('fallback-child-session'),
@@ -1002,6 +942,113 @@ describe('HarnessSdkJsonRpcServer', () => {
     },
   )
 
+  it('rejects malformed initialize reasoningEffort values at the wire boundary', async () => {
+    const ctx = new Context()
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      for (const reasoningEffort of ['', 42]) {
+        await expect(server.handleRequest('initialize', {
+          cwd: '.',
+          provider: 'deepseek-official',
+          model: 'model',
+          reasoningEffort,
+        })).rejects.toThrow('initialize reasoningEffort must be a non-empty string')
+      }
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects an unavailable exact model during initialize', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-invalid-route-'))
+    const ctx = await makeHarness(storageDir)
+    class RejectingAdapter extends LlmAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.reject(new Error(`model unavailable: ${provider}/${model}`))
+      }
+
+      async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        throw new Error('unreachable')
+      }
+    }
+    const disposeAdapter = ctx.llm.registerAdapter(['private'], new RejectingAdapter())
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await expect(server.initialize({ cwd: storageDir, provider: 'private', model: 'missing' }))
+        .rejects.toThrow('model unavailable: private/missing')
+      await expect(server.prompt({
+        sessionId: 'invalid-route',
+        contentBlocks: [{ type: 'text', text: 'must not run' }],
+      })).rejects.toThrow('SDK server is not initialized')
+      expect((server as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0)
+      await server.shutdown()
+    } finally {
+      disposeAdapter()
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects prompts while exact-route initialization is pending', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-pending-route-'))
+    const ctx = await makeHarness(storageDir)
+    const resolution = Promise.withResolvers<LlmResolvedModelInfo>()
+    const resolvedModel = { provider: 'private', id: 'selected', name: 'Selected' }
+    let resolveModelCalled = false
+    class PendingAdapter extends LlmAdapter {
+      override resolveModel(): Promise<LlmResolvedModelInfo> {
+        resolveModelCalled = true
+        return resolution.promise
+      }
+
+      async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        throw new Error('unreachable')
+      }
+    }
+    const disposeAdapter = ctx.llm.registerAdapter(['private'], new PendingAdapter())
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      const initialization = server.initialize({ cwd: storageDir, provider: 'private', model: 'selected' })
+      await vi.waitFor(() => { expect(resolveModelCalled).toBe(true) })
+
+      await expect(server.prompt({
+        sessionId: 'too-early',
+        contentBlocks: [{ type: 'text', text: 'must not run' }],
+      })).rejects.toThrow('SDK server is not initialized')
+      expect((server as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0)
+
+      resolution.resolve(resolvedModel)
+      await initialization
+      await server.shutdown()
+    } finally {
+      resolution.resolve(resolvedModel)
+      disposeAdapter()
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an unsupported reasoning effort during initialize', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-unsupported-reasoning-'))
+    const ctx = await makeHarness(storageDir)
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await expect(server.handleRequest('initialize', {
+        cwd: storageDir,
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-flash',
+        reasoningEffort: 'impossible',
+      })).rejects.toThrow('does not support reasoning effort "impossible"')
+      expect((server as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0)
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
   it('reports no adapter when the LLM service is absent', async () => {
     const ctx = new Context()
     try {
@@ -1049,68 +1096,60 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport()) as unknown as {
-      getOrCreateSession(sessionId: string, environment?: Readonly<Record<string, string>>, cwd?: string): Promise<{ handle: AgentHandle }>
+      getOrCreateSession(sessionId: string): Promise<{ handle: AgentHandle }>
       shutdown(): Promise<Record<string, never>>
     }
 
-    const first = server.getOrCreateSession('shared', {}, '/tmp')
-    const second = server.getOrCreateSession('shared', {}, '/tmp')
+    const first = server.getOrCreateSession('shared')
+    const second = server.getOrCreateSession('shared')
     expect(create).toHaveBeenCalledTimes(1)
     resolveShared?.(sharedHandle)
     const [firstRecord, secondRecord] = await Promise.all([first, second])
     expect(firstRecord).toBe(secondRecord)
 
-    await expect(server.getOrCreateSession('retry', {}, '/tmp')).rejects.toThrow('creation failed')
-    await expect(server.getOrCreateSession('retry', {}, '/tmp')).resolves.toMatchObject({ handle: retryHandle })
+    await expect(server.getOrCreateSession('retry')).rejects.toThrow('creation failed')
+    await expect(server.getOrCreateSession('retry')).resolves.toMatchObject({ handle: retryHandle })
     expect(create).toHaveBeenCalledTimes(3)
 
     await server.shutdown()
     expect(sharedHandle.dispose).toHaveBeenCalledOnce()
     expect(retryHandle.dispose).toHaveBeenCalledOnce()
-    await expect(server.getOrCreateSession('after-shutdown', {}, '/tmp')).rejects.toThrow('SDK server is shutting down')
+    await expect(server.getOrCreateSession('after-shutdown')).rejects.toThrow('SDK server is shutting down')
   })
 
   it('resolves a relative cwd before creating the session', async () => {
     const create = vi.fn<(options: unknown) => Promise<AgentHandle>>()
       .mockResolvedValue({ agent: {} as Agent, dispose: () => Promise.resolve() })
+    const resolveCallConfig = vi.fn(async (config: unknown) => config)
     const ctx = {
       on: vi.fn(() => () => undefined),
       agents: { create, get: () => undefined },
-      get: () => ({ listProviders: () => [{ id: 'mock', name: 'Mock' }] }),
+      get: () => ({ listProviders: () => [{ id: 'mock', name: 'Mock' }], resolveCallConfig }),
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport()) as unknown as {
-      initialize(params: { cwd: string; provider: string; model: string; maxTokens?: number }): Promise<unknown>
-      getOrCreateSession(sessionId: string, environment?: Readonly<Record<string, string>>, cwd?: string): Promise<unknown>
+      initialize(params: { cwd: string; provider: string; model: string; reasoningEffort?: string; maxTokens?: number }): Promise<unknown>
+      getOrCreateSession(sessionId: string): Promise<unknown>
       shutdown(): Promise<Record<string, never>>
     }
 
-    await server.initialize({ cwd: '.', provider: 'mock', model: 'model', maxTokens: 123 })
-    await server.getOrCreateSession('relative', {}, process.cwd())
+    await server.initialize({ cwd: '.', provider: 'mock', model: 'model', reasoningEffort: 'high', maxTokens: 123 })
+    await server.getOrCreateSession('relative')
 
+    expect(resolveCallConfig).toHaveBeenCalledWith({
+      provider: 'mock',
+      model: 'model',
+      reasoningEffort: ReasoningEffortId('high'),
+      maxTokens: 123,
+    })
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       meta: { cwd: process.cwd() },
-      agentOptions: { provider: 'mock', model: 'model', maxTokens: 123 },
+      agentOptions: {
+        provider: 'mock',
+        model: 'model',
+        reasoningEffort: ReasoningEffortId('high'),
+        maxTokens: 123,
+      },
     }))
-    await server.shutdown()
-  })
-
-  it('isolates a per-session cwd and keeps it immutable', async () => {
-    const handle = { agent: { id: SessionId('cwd-session'), session: { events: [] }, followup: vi.fn() } as unknown as Agent, dispose: vi.fn(() => Promise.resolve()) }
-    const create = vi.fn(async () => handle)
-    const ctx = {
-      on: vi.fn(() => () => undefined),
-      agents: { create, get: () => handle.agent },
-      get: () => ({ listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek' }] }),
-    } as unknown as Context
-    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
-    await server.initialize({ cwd: '/base', provider: 'deepseek-official', model: 'model' })
-
-    await server.prompt({ sessionId: 'cwd-session', contentBlocks: [{ type: 'text', text: 'hi' }], cwd: '/work/a' })
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ meta: { cwd: '/work/a' } }))
-
-    await expect(server.prompt({ sessionId: 'cwd-session', contentBlocks: [{ type: 'text', text: 'again' }], cwd: '/work/b' }))
-      .rejects.toThrow('session cwd is immutable after creation: cwd-session')
-
     await server.shutdown()
   })
 
@@ -1149,6 +1188,6 @@ describe('HarnessSdkJsonRpcServer', () => {
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
 
     await expect(server.shutdown()).rejects.toBe(listenerFailure)
-    expect(on).toHaveBeenCalledTimes(5)
+    expect(on).toHaveBeenCalledTimes(4)
   })
 })

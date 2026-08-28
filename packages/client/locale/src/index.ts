@@ -7,7 +7,7 @@ import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from './locale-settin
 
 export {
   LOCALE_IDS, LOCALE_PREFERENCE_FIELD, LOCALE_SETTINGS_NAMESPACE,
-  type LocaleId, type LocaleSettings,
+  type BuiltInLocaleId, type LocaleId, type LocaleSettings,
 } from './locale-settings.ts'
 
 const LOCALE_NAMESPACE = settingsNamespace(LOCALE_SETTINGS_NAMESPACE)
@@ -35,7 +35,8 @@ export function apply(ctx: Context): void {
         order: -90,
         text: () => {
           const preference = localeScope.get().preference
-          return preference === undefined ? '' : responseLanguagePrompt(preference)
+          // Custom locale ids carry no built-in prompt wording.
+          return preference === 'zh' || preference === 'en' ? responseLanguagePrompt(preference) : ''
         },
       })
     })

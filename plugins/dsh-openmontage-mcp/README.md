@@ -18,9 +18,11 @@ may download a source video and run ffmpeg/transcription analysis. The bundle
 allows up to 10 minutes for this call. If a client reports a timeout, keep the
 returned `project_id` and call `mcp__openmontage__reference_clone_status` before
 retrying; completed projects are reused on retry. Once the status is
-`prepared`, call `list_project_files` and then `sync_project_exports` (or
-`export_project_file`) before reading any `/exchange/openmontage/<project_id>`
-path. This avoids reading an export while it is still being mirrored.
+`prepared`, call `list_project_files`. For JSON/Markdown analysis files, use
+`read_project_file` so a remote client receives the text over the authenticated
+MCP channel; do not pass the CI-only `/exchange/openmontage/<project_id>` path
+to a local `Read` tool. Use `sync_project_exports` or `export_project_file` only
+when a shared mount or media delivery is needed.
 
 ## Configuration (read at load time)
 

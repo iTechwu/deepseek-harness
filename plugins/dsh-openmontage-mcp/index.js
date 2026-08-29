@@ -22,7 +22,7 @@ const GUIDANCE = `OpenMontage 视频生成：当用户需要生成、复刻或�
 执行顺序：
 1. 先调用 mcp__openmontage__openmontage_capabilities，读取本次可用的 provider、工作流与提交契约；
 2. 若用户给了视频地址，调用 mcp__openmontage__prepare_reference_clone，并按返回的 agent_instructions 走 OpenMontage 管线审批门。该调用会下载、转码、转写和场景分析，可能需要数分钟；如果客户端先返回超时，不要立即重复创建项目或判定失败，保留返回/日志中的 project_id，改用 mcp__openmontage__reference_clone_status 轮询到项目就绪；
-3. 项目状态为 prepared 后，先调用 mcp__openmontage__list_project_files，再调用 mcp__openmontage__sync_project_exports（或按需调用 mcp__openmontage__export_project_file）。只有这些工具返回的 file_path/host_path 已确认存在后，才使用 Read 读取 /exchange/openmontage/<project_id>/...；不要猜路径，也不要在 prepare 超时后直接读取交换目录；
+3. 项目状态为 prepared 后，先调用 mcp__openmontage__list_project_files；需要读取 JSON/Markdown 分析内容时，直接调用 mcp__openmontage__read_project_file（通过已认证的 MCP 通道返回文本）。不要让远程客户端尝试 Read CI 主机的 /exchange/openmontage/<project_id>/... 路径；需要媒体或批量文件时，再调用 mcp__openmontage__sync_project_exports 或 mcp__openmontage__export_project_file；不要猜路径，也不要在 prepare 超时后直接读取交换目录；
 4. 用 mcp__openmontage__submit_video_job 提交任务，request 必须满足：
    - request.workflow 必须是 pipeline 名（如 "animation"），绝不能是阶段名（compose 是 stage，不是 workflow）；
    - request.input 必须用 TEXT 分支：{"type":"text","inlineText":"<创意brief/概念文本>"}。绝不要用 ARTIFACT 分支 {"type":"artifact","artifactId":"<...>"} 去引用已准备的 project_id（如 clone-...）——project_id 不是 artifact，提交时会被拒绝（OPENMONTAGE_ARTIFACT_INPUT_FAILED）。artifactId 只用于真正经 artifact bridge 上传的文件；

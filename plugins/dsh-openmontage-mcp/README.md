@@ -28,8 +28,10 @@ when a shared mount or media delivery is needed.
 
 | Env var | Meaning | Default |
 |---|---|---|
-| `MCP_BASE_URL` | Unified MCP gateway base URL | `https://ixicai.cn/mcp` |
 | `MODELS_API_KEY` | Single Models API key sent to the gateway | *(required)* |
+
+The MCP endpoint is fixed at `https://ixicai.cn/mcp/montage`; users do not
+configure a CI-only base URL.
 
 The harness container runs with host networking, which is required by DSH
 (refuses `0.0.0.0`; Nginx proxies via the host loopback). A host-networked

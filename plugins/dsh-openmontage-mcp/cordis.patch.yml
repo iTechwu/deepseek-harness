@@ -22,7 +22,7 @@
       config:
         transport: streamable-http
         serverName: openmontage
-        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/montage')
+        url: 'https://ixicai.cn/mcp/montage'
         headers:
           Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
         # Reference preparation performs download, ffmpeg analysis and optional

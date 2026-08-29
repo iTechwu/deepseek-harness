@@ -25,7 +25,10 @@
         url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/montage')
         headers:
           Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
-        toolCallTimeoutMs: 60000
+        # Reference preparation performs download, ffmpeg analysis and optional
+        # transcription synchronously. Keep the MCP request budget below the
+        # gateway's 3600s proxy budget but above normal Douyin processing time.
+        toolCallTimeoutMs: 600000
         failOnStartupError: false
         reconnect:
           enabled: true

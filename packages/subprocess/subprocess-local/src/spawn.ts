@@ -278,7 +278,11 @@ export function taskkillProcessTree(pid: number): void {
   // Outcome deliberately unchecked: an already-absent tree (status 128), exit
   // races, and a missing taskkill binary (spawnSync reports, never throws) are
   // as tolerable here as ESRCH is for a POSIX group signal.
-  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+    stdio: 'ignore',
+    // taskkill is a console binary; hide its window when invoked from a GUI host.
+    windowsHide: true,
+  })
 }
 
 /**
@@ -358,6 +362,8 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     // `detached` gives teardown a tree root on POSIX (its own process group);
     // Windows terminates by root pid through taskkill /T instead.
     detached: platform !== 'win32',
+    // Keep the child's console window out of the taskbar when a GUI host owns the tree.
+    windowsHide: true,
   })
 
   const collectStream = (mode: SubprocessOutputMode, stream: Readable | null, label: string): OutputCollector | undefined => {

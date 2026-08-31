@@ -24,7 +24,7 @@ import css from './SettingsRoot.module.css'
 const RECOVERY_CONFIRMATION_MS = 2_000
 
 /** Desktop-owned display glyph kept local until the upstream slot accepts icons. */
-function IconDesktopSettings({ size = 16, className }: { size?: number; className?: string }) {
+function IconDesktopSettings({ size = 16, className }: { size?: number; className?: string | undefined }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden="true">
       <rect x="1.5" y="2.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.25" />

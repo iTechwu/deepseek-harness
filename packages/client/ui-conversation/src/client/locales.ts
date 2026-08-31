@@ -64,7 +64,7 @@ export const zh = {
   'access.confirm.acknowledge': '我已了解风险，并愿意继续',
   'access.confirm.cancel': '取消',
   'access.confirm.enable': '启用完全权限',
-  'hero.headline': '探索未至之境',
+  'hero.headline': '青年人买车就到优惠豚',
   'hero.preview': '预览版',
   'hero.chooseWorkspace': '选择工作区',
   'session.hierarchy': '会话层级',

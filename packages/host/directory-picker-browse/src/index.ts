@@ -153,13 +153,15 @@ function messageOf(error: unknown): string {
  * One listing row for a dirent, following symlinks to directories; null for
  * non-directories and broken/cyclic links (skipped silently — the browser
  * shows what can be entered, and a broken link cannot).
+ * Windows reparse/system directories may appear as directories but fail `stat`;
+ * treat those the same way so the parent listing stays usable.
  */
 async function directoryRow(
   parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
 ): Promise<DirectoryEntry | null> {
   const path = join(parent, name)
-  let enterable = isDirectory
-  if (!enterable && isSymbolicLink) {
+  let enterable = false
+  if (isDirectory || isSymbolicLink) {
     try {
       // The probe races the caller too: a symlink target on a stalled
       // network filesystem must not keep a departed caller's request alive.

@@ -27,7 +27,8 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-shell'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { JsonValue, TerminalCallView, TerminalResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+import type { TerminalCallView, TerminalResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
 
 /** Cordis plugin name used by loader diagnostics. */

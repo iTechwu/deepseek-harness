@@ -93,6 +93,8 @@ function launchedThroughSsh(ctx: Context): boolean {
 const BROWSER_OPENER_MODULE = import.meta.resolve('open')
 
 const BROWSER_OPENER_PROGRAM = `
+// Electron 把 Node 模式跑在本进程里时会带 ELECTRON_RUN_AS_NODE,必须先剥掉再交给系统 opener。
+for (const name of Object.keys(process.env)) if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE') delete process.env[name]
 try {
   const { default: open } = await import(${JSON.stringify(BROWSER_OPENER_MODULE)})
   const launcher = await open(process.argv[1])
@@ -185,7 +187,12 @@ function spawnBrowserLauncher(url: string): ChildProcess {
     '--eval', BROWSER_OPENER_PROGRAM,
     '--', url,
   ], {
-    env: scrubbedParentEnv(),
+    windowsHide: true,
+    // 打包在 Electron 里时,process.execPath 是 Electron 二进制;以 Node 模式运行 opener 脚本。
+    env: {
+      ...scrubbedParentEnv(),
+      ELECTRON_RUN_AS_NODE: '1',
+    },
     stdio: ['ignore', 'inherit', 'pipe'],
   })
 }

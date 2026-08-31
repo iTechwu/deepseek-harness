@@ -2,6 +2,8 @@
 
 /** STARTUPINFOW uses the standard input, output, and error handles. */
 export const STARTF_USESTDHANDLES = 0x00000100
+/** STARTUPINFOW uses the wShowWindow member to control the child's initial show state. */
+export const STARTF_USESHOWWINDOW = 0x00000001
 /** HandleInformation flag that permits child inheritance. */
 export const HANDLE_FLAG_INHERIT = 0x1
 /** Infinite WaitForSingleObject timeout. */

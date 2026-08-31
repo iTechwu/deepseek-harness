@@ -188,7 +188,8 @@ export function spawnPipedProcess(
     startupInfo = allocStartupInfo()
     encodeStartupInfo(startupInfo, {
       cb: abi.STARTUPINFOW_SIZE,
-      dwFlags: abi.STARTF_USESTDHANDLES,
+      dwFlags: abi.STARTF_USESTDHANDLES | abi.STARTF_USESHOWWINDOW,
+      wShowWindow: 0,
       hStdInput: stdIn.read,
       hStdOutput: stdOut.write,
       hStdError: stdErr.write,
@@ -360,7 +361,8 @@ export function spawnInheritedJobProcess(
     startupInfo = allocStartupInfo()
     encodeStartupInfo(startupInfo, {
       cb: abi.STARTUPINFOW_SIZE,
-      dwFlags: abi.STARTF_USESTDHANDLES,
+      dwFlags: abi.STARTF_USESTDHANDLES | abi.STARTF_USESHOWWINDOW,
+      wShowWindow: 0,
       hStdInput: stdIn,
       hStdOutput: stdOut,
       hStdError: stdErr,

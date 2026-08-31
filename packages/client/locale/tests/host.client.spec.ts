@@ -1,7 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+
 import {
   LOCALE_SETTINGS_NAMESPACE, apply,
 } from '@deepseek-ai/dsh-client-locale'
@@ -20,7 +21,7 @@ describe('locale host', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
-    const ns = settingsNamespace(LOCALE_SETTINGS_NAMESPACE)
+    const ns = LOCALE_SETTINGS_NAMESPACE
     expect(ctx.settings.get(ns)).toEqual({})
     await ctx.settings.update(ns, { preference: 'en' })
     expect(ctx.settings.get(ns)).toEqual({ preference: 'en' })
@@ -40,9 +41,9 @@ describe('locale host', () => {
     await fiber.await()
 
     expect(renderPrompt(await ctx.systemPrompt.assemble())).not.toContain('Always answer')
-    await ctx.settings.update(settingsNamespace(LOCALE_SETTINGS_NAMESPACE), { preference: 'zh' })
+    await ctx.settings.update(LOCALE_SETTINGS_NAMESPACE, { preference: 'zh' })
     expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('请始终使用中文回答用户')
-    await ctx.settings.update(settingsNamespace(LOCALE_SETTINGS_NAMESPACE), { preference: 'en' })
+    await ctx.settings.update(LOCALE_SETTINGS_NAMESPACE, { preference: 'en' })
     expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('Always answer the user in English')
 
     await fiber.dispose()

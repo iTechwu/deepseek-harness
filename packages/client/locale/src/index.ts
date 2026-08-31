@@ -1,7 +1,7 @@
 /** Host registration for the browser locale preference. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from './locale-settings.ts'
 
@@ -10,7 +10,6 @@ export {
   type BuiltInLocaleId, type LocaleId, type LocaleSettings,
 } from './locale-settings.ts'
 
-const LOCALE_NAMESPACE = settingsNamespace(LOCALE_SETTINGS_NAMESPACE)
 const LANGUAGE_PROMPT_SECTION = 'preference:response-language'
 
 /** Render the model-facing response-language instruction for one explicit preference. */
@@ -28,7 +27,10 @@ function responseLanguagePrompt(preference: 'zh' | 'en'): string {
  */
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
-    const localeScope = settingsCtx.settings.register(LOCALE_NAMESPACE, LocaleSettingsSchema)
+    const localeScope = settingsCtx.settings.register(
+      LOCALE_SETTINGS_NAMESPACE,
+      LocaleSettingsSchema,
+    )
     settingsCtx.inject(['systemPrompt'], (promptCtx) => {
       promptCtx.systemPrompt.section({
         name: LANGUAGE_PROMPT_SECTION,

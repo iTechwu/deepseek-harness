@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-llm-deepseek` 是 harness LLM 服务的 DeepSeek 直连适配器：它拥有 `deepseek-official` 提供方路由，并把 DeepSeek 的 chat-completions 协议格式翻译为 harness 的流式分片协议。借助它，组合可以流式调用 DeepSeek 模型，支持可配置的 thinking 与推理（reasoning）强度、向视觉模型发送图片，并浏览一份建议性模型目录。连接事实——端点、目录、密钥、thinking 策略——按请求解析，因此编辑用户设置文档即可改变下一个请求，无需重启。它是 DeepSeek 的两个结构不同适配器之一：pi-ai 孪生通过库与更多提供方服务自己的路由名，两者可以并排挂载。
+`@deepseek-ai/dsh-llm-deepseek` 是 harness LLM 服务的 DeepSeek 直连适配器：它拥有 `deepseek-official` 提供方路由，并把 DeepSeek 的 chat-completions 协议格式翻译为 harness 的流式分片协议。借助它，组合可以流式调用 DeepSeek 模型，支持可配置的 thinking 与推理（reasoning）强度、向视觉模型发送图片，并浏览一份建议性模型目录。连接事实——端点、目录、密钥、thinking 策略——按请求解析，因此编辑用户设置文档即可改变下一个请求，无需重启。受管组合也可以保留端点与凭据引用的所有权，同时让其余字段继续使用动态设置。它是 DeepSeek 的两个结构不同适配器之一：pi-ai 孪生通过库与更多提供方服务自己的路由名，两者可以并排挂载。
 
 ## 目录
 
@@ -38,6 +38,7 @@ kind: "package-reference"
   config:
     apiKeyEnv: DEEPSEEK_API_KEY  # credential reference, resolved per request
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then this default
+    connectionPolicy: dynamic    # optional; composition locks apiKeyEnv + baseURL
     reasoningEffort: high        # optional; off | low | high | max
     maxTokens: 256000            # optional per-request output cap
     maxRequestFilesBytes: 134217728
@@ -52,6 +53,7 @@ kind: "package-reference"
 |---|---|---|
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 按请求解析的凭据引用：先经凭据 seam，再到环境变量 |
 | `baseURL` | `https://api.deepseek.com` | 端点基址；设置了 `$DEEPSEEK_BASE_URL` 时优先 |
+| `connectionPolicy` | `dynamic` | `dynamic` 允许 settings 替换连接字段；`composition` 保留 entry 的 `apiKeyEnv` 与已解析 `baseURL` |
 | `thinking` | `enabled` | 部署策略；`disabled` 把所有请求锁定为 `off` |
 | `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
 | `maxTokens` | `256,000` | 单次请求输出上限；模型自身上限与显式请求值优先 |
@@ -84,7 +86,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 动态配置
 
-连接事实通过可选 settings 与凭据 seam 每次操作重新读取一次。用户设置文档中的 `llm-deepseek:` 分节无需重启即可覆盖任何字段；未通过超 schema 上限的快照会保留最后有效事实并记录失败。API 密钥从提供端点、图片与 Files 策略及空闲预算的同一快照按流调用解析，因此被拒绝的设置代际不会贡献其中任何事实。图片请求在请求时解析附件服务，因此加载顺序不会冻结图片可用性。
+连接事实通过可选 settings 与凭据 seam 每次操作重新读取一次。使用默认的 `connectionPolicy: dynamic` 时，用户设置文档中的 `llm-deepseek:` 分节无需重启即可覆盖任何字段。`connectionPolicy: composition` 则保留组合 entry 的凭据引用，以及其显式配置或启动时解析出的端点；settings 仍可控制目录、请求默认值、图片与 Files 策略、空闲预算及重试策略。未通过超 schema 上限的快照会保留最后有效事实并记录失败。API 密钥从有效端点的同一快照按流调用解析，因此被拒绝的设置代际不会贡献其中任何一项。图片请求在请求时解析附件服务，因此加载顺序不会冻结图片可用性。
 
 ### 提供方专用请求字段
 
@@ -106,7 +108,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 设计理念
 
-插件建立在一个显式解析步骤与一条注册事实之上。`resolveAdapterOptions()` 是从原始配置到已校验连接事实的唯一路径，适配器通过 thunk 每次操作重新读取这些事实——基址、目录、请求默认值、图片与 Files 策略及空闲预算都会作用于下一个请求，而进行中的流保持其启动时的事实。注册时捕获的唯一事实是重试策略：解析值变化时，插件会在一次同步分节中原位重新注册路由，因此任何请求都观察不到空档。
+插件建立在一个显式解析步骤与一条注册事实之上。`resolveAdapterOptions()` 是从原始配置到已校验连接事实的唯一路径，适配器通过 thunk 每次操作重新读取这些事实——基址、目录、请求默认值、图片与 Files 策略及空闲预算都会作用于下一个请求，而进行中的流保持其启动时的事实。组合拥有的连接字段会在 settings 来源接入前被捕获，并在解析时仅替换对应的动态字段。注册时捕获的唯一事实是重试策略：解析值变化时，插件会在一次同步分节中原位重新注册路由，因此任何请求都观察不到空档。
 
 ### 源码地图
 

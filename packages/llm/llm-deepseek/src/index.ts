@@ -5,9 +5,10 @@
  * `llm-deepseek` user-settings section (`ctx.settings`) and resolves the API
  * key through the optional credential seam (`ctx.credentials`), so a changed
  * base URL, catalog, or key reaches the very next request without restarting
- * anything, while an in-flight stream keeps the facts it started with. The
- * one registration-captured fact — the retry policy — re-registers the route
- * in place when it changes.
+ * anything, while an in-flight stream keeps the facts it started with. A
+ * composition may retain ownership of the credential reference and endpoint
+ * while leaving the remaining settings dynamic. The one registration-captured
+ * fact — the retry policy — re-registers the route in place when it changes.
  * @module @deepseek-ai/dsh-llm-deepseek
  */
 
@@ -127,6 +128,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
+  /** Whether settings may replace connection fields; `composition` retains the entry's credential reference and endpoint. */
+  connectionPolicy?: 'dynamic' | 'composition'
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
   /** Default thinking effort (default `high`); `off` disables thinking per request. */
@@ -177,6 +180,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
+  connectionPolicy: z.union(['dynamic', 'composition']).default('dynamic'),
   thinking: z.union(['enabled', 'disabled']),
   reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
@@ -403,15 +407,25 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
 }
 
 export function apply(ctx: Context, config: Config): void {
+  const environment = launchEnvironmentOf(ctx)
+  const compositionConnection = config.connectionPolicy === 'composition'
+    ? {
+      apiKeyEnv: config.apiKeyEnv ?? DEFAULT_API_KEY_ENV,
+      baseURL: config.baseURL ?? environment.get(BASE_URL_ENV)?.value ?? PUBLIC_BASE_URL,
+    }
+    : undefined
   let current: () => Config = () => config
-  let lastRaw: Config | undefined
+  let lastSource: Config | undefined
   let lastGood: ResolvedDeepSeekOptions | undefined
   const options = (): ResolvedDeepSeekOptions => {
-    const raw = current()
-    if (raw === lastRaw && lastGood !== undefined) return lastGood
+    const source = current()
+    if (source === lastSource && lastGood !== undefined) return lastGood
+    const raw = compositionConnection === undefined
+      ? source
+      : { ...source, ...compositionConnection }
     try {
-      const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx))
-      lastRaw = raw
+      const next = resolveAdapterOptions(raw, environment)
+      lastSource = source
       lastGood = next
       return next
     } catch (error) {
@@ -419,7 +433,7 @@ export function apply(ctx: Context, config: Config): void {
       // only sees a live settings snapshot failing a beyond-schema bound:
       // keep serving the last good facts and say so once per bad snapshot.
       if (lastGood === undefined) throw error
-      lastRaw = raw
+      lastSource = source
       ctx.logger.error('llm-deepseek: keeping the last good configuration after an invalid settings section')
       ctx.logger.error(error)
       return lastGood

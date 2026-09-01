@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-llm-deepseek` is the direct DeepSeek adapter for the harness LLM service: it owns the `deepseek-official` provider route and translates DeepSeek's chat-completions wire format into the harness stream-chunk protocol. With it a composition can stream DeepSeek models with configurable thinking and reasoning effort, send images to vision models, and browse an advisory model catalog. Connection facts — endpoint, catalog, key, thinking policy — resolve per request, so editing the user settings document changes the next request without a restart. It is one of two structurally different adapters for DeepSeek: the pi-ai twin serves its own route names through a library and additional providers, and both can be mounted side by side.
+`@deepseek-ai/dsh-llm-deepseek` is the direct DeepSeek adapter for the harness LLM service: it owns the `deepseek-official` provider route and translates DeepSeek's chat-completions wire format into the harness stream-chunk protocol. With it a composition can stream DeepSeek models with configurable thinking and reasoning effort, send images to vision models, and browse an advisory model catalog. Connection facts — endpoint, catalog, key, thinking policy — resolve per request, so editing the user settings document changes the next request without a restart. A managed composition may retain ownership of the endpoint and credential reference while preserving dynamic settings for the remaining fields. It is one of two structurally different adapters for DeepSeek: the pi-ai twin serves its own route names through a library and additional providers, and both can be mounted side by side.
 
 ## Table of Contents
 
@@ -38,6 +38,7 @@ Choose this adapter when the deployment targets DeepSeek's official API, optiona
   config:
     apiKeyEnv: DEEPSEEK_API_KEY  # credential reference, resolved per request
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then this default
+    connectionPolicy: dynamic    # optional; composition locks apiKeyEnv + baseURL
     reasoningEffort: high        # optional; off | low | high | max
     maxTokens: 256000            # optional per-request output cap
     maxRequestFilesBytes: 134217728
@@ -52,6 +53,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 |---|---|---|
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference resolved per request through the credentials seam, then the environment |
 | `baseURL` | `https://api.deepseek.com` | Endpoint base; `$DEEPSEEK_BASE_URL` wins when set |
+| `connectionPolicy` | `dynamic` | `dynamic` lets settings replace connection fields; `composition` retains the entry's `apiKeyEnv` and resolved `baseURL` |
 | `thinking` | `enabled` | Deployment policy; `disabled` locks every request to `off` |
 | `reasoningEffort` | `high` | Default effort: `off`, `low`, `high`, or `max` |
 | `maxTokens` | `256,000` | Per-request output cap; a model's own cap and explicit request values win |
@@ -84,7 +86,7 @@ Files mode bounds retained request versions by `maxRequestFilesBytes` and `maxIm
 
 ### Dynamic configuration
 
-Connection facts are re-read once per operation through the optional settings and credentials seams. A `llm-deepseek:` section in the user settings document overrides any field without a restart; a snapshot that fails a beyond-schema bound keeps the last good facts and logs the failure. The API key resolves per stream call from the same snapshot that supplies the endpoint, image and Files policies, and idle budget, so a rejected settings generation contributes none of them. Image requests resolve the attachment service at request time, so load order does not freeze image availability.
+Connection facts are re-read once per operation through the optional settings and credentials seams. With the default `connectionPolicy: dynamic`, a `llm-deepseek:` section in the user settings document overrides any field without a restart. `connectionPolicy: composition` instead retains the composition entry's credential reference and its explicitly configured or launch-resolved endpoint; settings continue to control the catalog, request defaults, image and Files policies, idle budget, and retry policy. A snapshot that fails a beyond-schema bound keeps the last good facts and logs the failure. The API key resolves per stream call from the same snapshot that supplies the effective endpoint, so a rejected settings generation contributes neither. Image requests resolve the attachment service at request time, so load order does not freeze image availability.
 
 ### Provider-specific request fields
 
@@ -106,7 +108,7 @@ This section explains the design behind the adapter; the observable behavior is 
 
 ### Design philosophy
 
-The plugin is built on one explicit resolve step and one registration fact. `resolveAdapterOptions()` is the single path from raw config to validated connection facts, and the adapter re-reads those facts through a thunk once per operation — base URL, catalog, request defaults, image and Files policies, and idle budget all take effect on the next request, while an in-flight stream keeps the facts it started with. The only fact captured at registration is the retry policy: when its resolved value changes, the plugin re-registers the route in place, in one synchronous section, so no request observes a gap.
+The plugin is built on one explicit resolve step and one registration fact. `resolveAdapterOptions()` is the single path from raw config to validated connection facts, and the adapter re-reads those facts through a thunk once per operation — base URL, catalog, request defaults, image and Files policies, and idle budget all take effect on the next request, while an in-flight stream keeps the facts it started with. Composition-owned connection fields are captured before the settings source attaches and replace only their dynamic counterparts during resolution. The only fact captured at registration is the retry policy: when its resolved value changes, the plugin re-registers the route in place, in one synchronous section, so no request observes a gap.
 
 ### Source map
 

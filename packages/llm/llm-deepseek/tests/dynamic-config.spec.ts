@@ -22,6 +22,7 @@ import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 const NS = 'llm-deepseek'
 const KEY_REF = credentialRef('DEEPSEEK_API_KEY')
+const MODELS_KEY_REF = credentialRef('MODELS_API_KEY')
 const IMAGE_REF: ImageAttachmentRef = {
   attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
   mediaType: 'image/png',
@@ -133,6 +134,32 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
+  it('keeps composition-owned connection facts when settings contain a direct credential and endpoint', async () => {
+    vi.stubEnv('MODELS_API_KEY', '')
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const managed = await mockServer([{ kind: 'sse', events: textEvents }])
+    const direct = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx } = await boot(dir, {
+      apiKeyEnv: MODELS_KEY_REF,
+      baseURL: managed.url,
+      connectionPolicy: 'composition',
+    })
+    await ctx.credentials.set(MODELS_KEY_REF, 'models-key')
+    await ctx.credentials.set(KEY_REF, 'direct-key')
+
+    await ctx.settings.update(NS, {
+      apiKeyEnv: KEY_REF,
+      baseURL: direct.url,
+      connectionPolicy: 'dynamic',
+    })
+    await prompt(ctx)
+
+    expect(direct.requests).toHaveLength(0)
+    expect(managed.requests).toHaveLength(1)
+    expect(managed.headers[0]?.authorization).toBe('Bearer models-key')
+  })
+
   it('routes the next request with the freshly resolved base URL and credential', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()

@@ -42,6 +42,18 @@ function parseSettingsNamespace(value: string): SettingsNamespace {
   return value as SettingsNamespace
 }
 
+/**
+ * Validate and normalize a settings namespace for integrations compiled
+ * against the pre-0.1.2 settings API.
+ *
+ * This compatibility helper intentionally returns the same opaque string
+ * accepted by {@link SettingsProvider.register}; keeping validation here
+ * prevents older plugins from bypassing the namespace contract.
+ */
+export function settingsNamespace(value: string): SettingsNamespace {
+  return parseSettingsNamespace(value)
+}
+
 /** When a namespace's changes take effect for its owner. */
 export type SettingsApplies = 'live' | 'restart'
 

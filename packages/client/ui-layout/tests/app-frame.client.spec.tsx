@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
@@ -54,16 +55,17 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
-function mountFrame() {
+function mountFrame(slots: { sidebar?: ReactNode; overlay?: ReactNode } = {}) {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
-    if (key === 'sidebar') return <div data-testid="sidebar-content" />
+    if (key === 'sidebar') return slots.sidebar ?? <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
+    if (key === 'shell.overlay') return slots.overlay ?? <div data-testid="other-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
   const useSessions = ((sel: (s: SessionListState) => unknown) => {
@@ -105,7 +107,14 @@ function mountFrame() {
   )
   const utils = render(element())
   const frame = utils.container.firstElementChild as HTMLElement
-  return { instance, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return {
+    instance,
+    frame,
+    slotCalls,
+    rerenderFrame: () => { utils.rerender(element()) },
+    setOverlay: (overlay: ReactNode) => { slots.overlay = overlay; utils.rerender(element()) },
+    ...utils,
+  }
 }
 
 function tracks(frame: HTMLElement): number[] {
@@ -153,6 +162,41 @@ afterEach(() => {
 })
 
 describe('AppFrame', () => {
+  it('isolates the background, focuses a modal overlay, traps Tab, and restores focus', async () => {
+    const { frame, getByRole, setOverlay } = mountFrame({
+      sidebar: <button type="button">Open report</button>,
+      overlay: null,
+    })
+    const trigger = getByRole('button', { name: 'Open report' })
+    trigger.focus()
+
+    act(() => {
+      setOverlay(
+        <div role="dialog" aria-modal="true" aria-label="Report">
+          <button type="button">Close report</button>
+          <button type="button">Refresh report</button>
+        </div>,
+      )
+    })
+    await act(async () => {})
+
+    const close = getByRole('button', { name: 'Close report' })
+    const refresh = getByRole('button', { name: 'Refresh report' })
+    expect(document.activeElement).toBe(close)
+    expect(frame.querySelector('[data-testid="center-content"]')?.parentElement).toHaveProperty('inert', true)
+
+    refresh.focus()
+    refresh.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(close)
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(refresh)
+
+    act(() => { setOverlay(null) })
+    await act(async () => {})
+    expect(document.activeElement).toBe(trigger)
+    expect(frame.querySelector('[data-testid="center-content"]')?.parentElement?.inert).not.toBe(true)
+  })
+
   it('localizes the product title when the build does not supply one', () => {
     mountFrame()
     expect(document.title).toBe('DSH Local Build')

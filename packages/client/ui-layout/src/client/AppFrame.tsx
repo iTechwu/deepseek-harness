@@ -20,6 +20,15 @@ import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'a[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
@@ -106,6 +115,7 @@ export function AppFrame({
     return current === undefined ? undefined : s.byId[current]?.title
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
+  const overlayLayerRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
 
   const lastSession = useRef(detailsSession)
@@ -134,6 +144,97 @@ export function AppFrame({
     return () => {
       observer.disconnect()
       if (raf !== null) cancelAnimationFrame(raf)
+    }
+  }, [])
+
+  useEffect(() => {
+    const frame = frameRef.current
+    const overlayLayer = overlayLayerRef.current
+    /* v8 ignore next -- both refs attach to unconditional frame elements. */
+    if (frame === null || overlayLayer === null) return
+
+    let activeDialog: HTMLElement | null = null
+    let returnFocus: HTMLElement | null = null
+    const backgroundState = new Map<HTMLElement, boolean>()
+
+    const setBackgroundInert = (inert: boolean) => {
+      if (inert) {
+        for (const child of frame.children) {
+          if (!(child instanceof HTMLElement) || child === overlayLayer) continue
+          if (!backgroundState.has(child)) backgroundState.set(child, child.inert)
+          child.inert = true
+        }
+        return
+      }
+      for (const [child, wasInert] of backgroundState) child.inert = wasInert
+      backgroundState.clear()
+    }
+
+    const focusableItems = (dialog: HTMLElement) =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        .filter(item => !item.hidden && item.getAttribute('aria-hidden') !== 'true')
+
+    const syncModal = () => {
+      const dialogs = Array.from(overlayLayer.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
+      const nextDialog = dialogs.at(-1) ?? null
+      if (nextDialog !== null) {
+        if (activeDialog === null && document.activeElement instanceof HTMLElement) returnFocus = document.activeElement
+        setBackgroundInert(true)
+        if (nextDialog === activeDialog) return
+        activeDialog = nextDialog
+        queueMicrotask(() => {
+          if (activeDialog !== nextDialog || !nextDialog.isConnected) return
+          const first = focusableItems(nextDialog)[0]
+          if (first !== undefined) first.focus({ preventScroll: true })
+          else {
+            nextDialog.tabIndex = -1
+            nextDialog.focus({ preventScroll: true })
+          }
+        })
+        return
+      }
+
+      if (activeDialog === null) return
+      activeDialog = null
+      setBackgroundInert(false)
+      const target = returnFocus
+      returnFocus = null
+      queueMicrotask(() => {
+        if (target?.isConnected === true) target.focus({ preventScroll: true })
+      })
+    }
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || activeDialog === null) return
+      const items = focusableItems(activeDialog)
+      if (items.length === 0) {
+        event.preventDefault()
+        activeDialog.focus({ preventScroll: true })
+        return
+      }
+      const first = items.at(0)
+      /* v8 ignore next -- the empty collection returns above. */
+      if (first === undefined) return
+      const last = items.at(-1) ?? first
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if ((!event.shiftKey && document.activeElement === last)
+        || !activeDialog.contains(document.activeElement)) {
+        event.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+
+    const observer = new MutationObserver(syncModal)
+    observer.observe(overlayLayer, { childList: true, subtree: true })
+    document.addEventListener('keydown', trapFocus, true)
+    syncModal()
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('keydown', trapFocus, true)
+      setBackgroundInert(false)
+      if (returnFocus?.isConnected === true) returnFocus.focus({ preventScroll: true })
     }
   }, [])
 
@@ -207,7 +308,7 @@ export function AppFrame({
           <SessionProvider>{renderSlot('details', {})}</SessionProvider>
         </DetailsColumn>
       </>
-      <div className={css.overlayLayer} data-shell-overlay>
+      <div ref={overlayLayerRef} className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}

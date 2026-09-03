@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SettingsProvider, SettingsConflictError, settingsNamespace, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
+import { installSettingsSection, SettingsProvider, SettingsConflictError, settingsNamespace, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { MemorySettings } from './memory.ts'
 
@@ -80,6 +80,7 @@ describe('settings namespace validation', () => {
   it('keeps the legacy settingsNamespace helper for external plugins', () => {
     expect(settingsNamespace('browser')).toBe('browser')
     expect(() => settingsNamespace('Browser')).toThrow(TypeError)
+    expect(installSettingsSection).toBeTypeOf('function')
   })
 
   it.each(['', 'UI', '9lives', 'a_b', '-lead'])('rejects %j at the service', async (value) => {

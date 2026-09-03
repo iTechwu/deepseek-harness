@@ -54,6 +54,22 @@ export function settingsNamespace(value: string): SettingsNamespace {
   return parseSettingsNamespace(value)
 }
 
+/**
+ * Compatibility facade retained for plugins published against the pre-0.1.2
+ * settings helper API. The provider owns registration and lifecycle wiring.
+ */
+export function installSettingsSection<const Namespace extends string, T>(
+  ctx: Context,
+  ns: Namespace & SettingsNamespaceInput<Namespace>,
+  schema: z<T>,
+  entry: T,
+  hooks: SettingsSectionHooks<T>,
+): void {
+  ctx.inject(['settings'], (sctx) => {
+    sctx.settings.installSection(ctx, ns, schema, entry, hooks)
+  })
+}
+
 /** When a namespace's changes take effect for its owner. */
 export type SettingsApplies = 'live' | 'restart'
 

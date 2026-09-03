@@ -66,7 +66,7 @@ export function installSettingsSection<const Namespace extends string, T>(
   hooks: SettingsSectionHooks<T>,
 ): void {
   ctx.inject(['settings'], (sctx) => {
-    sctx.settings.installSection(ctx, ns, schema, entry, hooks)
+    sctx.settings.installSection(ctx, ns as SettingsNamespace, schema, entry, hooks)
   })
 }
 

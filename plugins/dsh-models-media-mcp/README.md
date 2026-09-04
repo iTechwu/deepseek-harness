@@ -17,8 +17,8 @@ Streamable HTTP MCP server，server name 固定为 `media`，工具以 `mcp__med
 
 ## 约束
 
-- 地址固定为公共网关路径，不接受自定义服务地址；凭据从 DSH 环境的
-  `MODELS_API_KEY` 读取。
+- 地址固定为公共网关路径，不接受自定义服务地址；`MODELS_API_KEY` 通过 DSH
+  credential provider 解析，配置与日志不保存密钥值。
 - `create` 工具的 `idempotencyKey` 必填；同一用户意图的重试必须复用原键。
 - create 只创建任务，不等待生成；轮询由 Agent 显式调用 `get_generation_task`
   （图片 ≥3s、视频 ≥5s 间隔，连续无变化退避 10s）。

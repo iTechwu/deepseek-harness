@@ -22,7 +22,7 @@ const GUIDANCE = `媒体直连生成（mcp__media__*）：单张图片或 5–10
 选路规则：
 - 生成一张图片 → mcp__media__create_image_task（固定 seedream-5.0，单张输出）。
 - 生成一个 5–10 秒连续单镜头视频（可带一张首帧图）→ mcp__media__create_video_task（固定 seedance-2.0-fast，无音频）。
-- 脚本/分镜/多镜头/转场/拼接/成片、上传源视频复刻克隆或编辑、字幕/配音/音乐/音画编排 → 一律使用 OpenMontage（mcp__montage__*），不要用 media 工具硬凑。
+- 脚本/分镜/多镜头/转场/拼接/成片、上传源视频复刻克隆或编辑、字幕/配音/音乐/音画编排 → 一律使用 OpenMontage（mcp__openmontage__*），不要用 media 工具硬凑。
 - media 的 create 工具是严格对象输入：不接受 model、源视频、场景数组、字幕、音频等字段；误传会被服务端以 POLICY_REQUIRES_OPENMONTAGE 拒绝并提示改走 OpenMontage。
 
 使用约束：

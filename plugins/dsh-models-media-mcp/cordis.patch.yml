@@ -4,7 +4,7 @@
 # (create_image_task / create_video_task / get_generation_task / cancel_generation_task).
 #
 # 地址与服务名固定：客户端不接受自定义服务地址，也不自定义模型（服务端固定
-# seedream-5.0 / seedance-2.0-fast）。凭据来自 DSH 环境的 MODELS_API_KEY。
+# seedream-5.0 / seedance-2.0-fast）。MODELS_API_KEY 通过 DSH credential seam 解析。
 #
 # failOnStartupError stays false: if the public gateway is briefly unreachable the
 # web profile still boots and the reconnect supervisor registers the tools once
@@ -16,9 +16,8 @@
       config:
         transport: streamable-http
         serverName: media
-        url: !!js ((process.env.MCP_BASE_URL || 'https://ixicai.cn/mcp') + '/media')
-        headers:
-          Authorization: !!js ('Bearer ' + (process.env.MODELS_API_KEY || ''))
+        url: 'https://ixicai.cn/mcp/media'
+        authorizationCredential: MODELS_API_KEY
         toolCallTimeoutMs: 60000
         failOnStartupError: false
         reconnect:

@@ -10,8 +10,8 @@ telling the model when to use it.
   namespace `mcp__openmontage__<tool>` (e.g. `mcp__openmontage__submit_video_job`).
 - A prompt section (`openmontage:guidance`) instructs the model to call
   `mcp__openmontage__openmontage_capabilities` → `prepare_reference_clone` →
-  `submit_video_job` for video generation / clone-recreate tasks, so the model
-  reaches for OpenMontage at the right time.
+  `submit_video_job` for scripted, multi-shot, edited, or clone-recreate tasks.
+  A 5–10 second continuous single-shot clip belongs to the Media MCP instead.
 
 `prepare_reference_clone` is a synchronous, long-running operation because it
 may download a source video and run ffmpeg/transcription analysis. The bundle
@@ -32,16 +32,6 @@ when a shared mount or media delivery is needed.
 
 The MCP endpoint is fixed at `https://ixicai.cn/mcp/montage`; users do not
 configure a CI-only base URL.
-
-The harness container runs with host networking, which is required by DSH
-(refuses `0.0.0.0`; Nginx proxies via the host loopback). A host-networked
-container cannot use Docker bridge DNS, so the deployment maps the
-`openmontage-mcp` service name to `127.0.0.1` with an `extra_hosts` entry — the
-same loopback where the OpenMontage `openmontage-mcp` container publishes its
-port (`8765`). The endpoint therefore stays stable and self-describing
-(`http://openmontage-mcp:8765/mcp`) even when the OpenMontage container's bridge
-address changes on recreate. Point `OPENMONTAGE_MCP_URL` at another address if
-the two run on different hosts.
 
 The gateway validates `MODELS_API_KEY`; no OpenMontage service token or job attribution is configured in DSH.
 

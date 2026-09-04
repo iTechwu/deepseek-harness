@@ -36,6 +36,7 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-credentials": "workspace:^",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@deepseek-ai/schemastery": "workspace:^",
     "zod": "^4.4.3"

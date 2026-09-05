@@ -3,11 +3,12 @@
  * Isolated file so vi.mock of the MCP SDK doesn't pollute other test suites.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 // ---- Mock MCP SDK ----
 
@@ -73,6 +74,18 @@ function sleep(ms: number): Promise<void> {
   const gate: PromiseWithResolvers<void> = Promise.withResolvers()
   setTimeout(gate.resolve, ms)
   return gate.promise
+}
+
+class TestCredentialProvider extends Service {
+  value = 'stored-models-key'
+
+  constructor(ctx: Context) {
+    super(ctx, 'credentials')
+  }
+
+  async resolve(ref: string) {
+    return ref === 'MODELS_API_KEY' ? { value: this.value, source: 'test' } : undefined
+  }
 }
 
 const stdioConfig: Config = {
@@ -410,5 +423,55 @@ describe('apply (plugin lifecycle)', () => {
 
     expect(mockConnect).toHaveBeenCalled()
     expect(ctx.tools.get('mcp__web__remote')).toBeDefined()
+  })
+
+  it('resolves Bearer authorization through the credential provider', async () => {
+    await ctx.plugin(TestCredentialProvider)
+    const httpConfig: Config = {
+      transport: 'streamable-http',
+      serverName: 'media',
+      url: 'https://ixicai.cn/mcp/media',
+      headers: {},
+      authorizationCredential: 'MODELS_API_KEY',
+      toolCallTimeoutMs: 30_000,
+      failOnStartupError: false,
+    }
+
+    await apply(ctx, httpConfig)
+
+    const options = vi.mocked(StreamableHTTPClientTransport).mock.calls.at(-1)?.[1]
+    expect(options?.requestInit).toEqual({ headers: {} })
+    expect(options?.fetch).toEqual(expect.any(Function))
+
+    const nativeFetch = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', nativeFetch)
+    await options?.fetch?.(new URL('https://ixicai.cn/mcp/media'), {
+      headers: { Accept: 'application/json' },
+    })
+    const sentHeaders = nativeFetch.mock.calls[0]?.[1]?.headers as Headers
+    expect(sentHeaders.get('Authorization')).toBe('Bearer stored-models-key')
+    expect(sentHeaders.get('Accept')).toBe('application/json')
+
+    const credentials = ctx.get('credentials')
+    expect(credentials).toBeInstanceOf(TestCredentialProvider)
+    if (!(credentials instanceof TestCredentialProvider)) throw new Error('test provider missing')
+    credentials.value = 'rotated-models-key'
+    await options?.fetch?.(new URL('https://ixicai.cn/mcp/media'), {})
+    const rotatedHeaders = nativeFetch.mock.calls[1]?.[1]?.headers as Headers
+    expect(rotatedHeaders.get('Authorization')).toBe('Bearer rotated-models-key')
+  })
+
+  it('rejects credential authorization without a configured provider value', async () => {
+    const httpConfig: Config = {
+      transport: 'streamable-http',
+      serverName: 'media',
+      url: 'https://ixicai.cn/mcp/media',
+      headers: {},
+      authorizationCredential: 'MODELS_API_KEY',
+      toolCallTimeoutMs: 30_000,
+      failOnStartupError: false,
+    }
+
+    await expect(apply(ctx, httpConfig)).rejects.toThrow(/mounted credentials provider/)
   })
 })

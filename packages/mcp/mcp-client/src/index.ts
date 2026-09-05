@@ -17,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
@@ -86,6 +87,8 @@ export interface StreamableHttpConfig {
   url: string
   /** Additional headers attached to MCP requests. */
   headers: Record<string, string>
+  /** Credential reference resolved through ctx.credentials and sent as a Bearer token. */
+  authorizationCredential?: string
   /** Per-tool-call timeout in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
@@ -127,6 +130,7 @@ export const Config = z.union([
     serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
     url: z.string().required(),
     headers: z.dict(String).default({}),
+    authorizationCredential: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
@@ -144,6 +148,7 @@ export const Config = z.union([
  * @returns startup readiness after connection and initial tool discovery settle.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  await preflightAuthorizationCredential(ctx, config)
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.
@@ -184,5 +189,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const outcome = await connection.ready
   if (outcome.error !== undefined && config.failOnStartupError) {
     throw new Error(`mcp-client(${config.serverName}): initial connection or tool synchronization failed`, { cause: outcome.error })
+  }
+}
+
+async function preflightAuthorizationCredential(ctx: Context, config: Config): Promise<void> {
+  if (config.transport !== 'streamable-http' || !config.authorizationCredential) return
+  if (Object.keys(config.headers).some(header => header.toLowerCase() === 'authorization')) {
+    throw new Error('mcp-client: headers.Authorization and authorizationCredential are mutually exclusive')
+  }
+  const credentials = ctx.get('credentials')
+  if (!credentials) {
+    throw new Error('mcp-client: authorizationCredential requires a mounted credentials provider')
+  }
+  const resolved = await credentials.resolve(credentialRef(config.authorizationCredential))
+  if (!resolved) {
+    throw new Error(`mcp-client: credential reference ${config.authorizationCredential} is not configured`)
   }
 }

@@ -12,6 +12,7 @@ import LlmRuntime, { ToolCallId, createUserMessage,
   ProviderRequestId,
   QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
+  REQUEST_BODY_TOO_LARGE_CODE,
   userAgent,
 } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -1419,7 +1420,8 @@ describe('DeepSeekAdapter against a mock server', () => {
       .toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
     expect(httpErrorCode(400, { message: 'invalid input: temperature exceeds maximum allowed value' }))
       .toBe('INVALID_REQUEST')
-    expect(httpErrorCode(413, { code: 'context_length_exceeded' })).toBe('INVALID_REQUEST')
+    expect(httpErrorCode(413, { code: 'context_length_exceeded' })).toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
+    expect(httpErrorCode(413)).toBe(REQUEST_BODY_TOO_LARGE_CODE)
   })
 
   it('distinguishes terminal quota exhaustion from transient HTTP 429 throttling', () => {
@@ -1446,6 +1448,25 @@ describe('DeepSeekAdapter against a mock server', () => {
     if (result.finish.kind !== 'error') throw new Error('expected an error finish')
     expect(result.finish.failure.code).toBe('SERVER')
     expect(result.finish.failure.message).toMatch(/HTTP 502/)
+  })
+
+  it('identifies a gateway body-size rejection without exposing the HTML response', async () => {
+    const server = await mockServer([{
+      kind: 'http-error',
+      status: 413,
+      body: '<html><h1>413 Request Entity Too Large</h1></html>',
+      contentType: 'text/html',
+    }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(result.finish).toEqual({
+      kind: 'error',
+      failure: {
+        message: 'DeepSeek request body exceeds the gateway byte limit (HTTP 413)',
+        code: REQUEST_BODY_TOO_LARGE_CODE,
+        status: 413,
+      },
+    })
   })
 
   it('maps unusual statuses to HTTP_<status>', () => {

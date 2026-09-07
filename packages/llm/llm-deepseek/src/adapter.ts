@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, REQUEST_BODY_TOO_LARGE_CODE } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -331,12 +331,14 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
  */
 export function httpErrorCode(status: number, error?: WireError['error']): string {
   if (status === 401 || status === 403) return 'AUTH'
-  if (status === 413) return 'INVALID_REQUEST'
   const detail = [error?.code, error?.type, error?.message].filter(Boolean).join(' ')
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  if ((status === 400 || status === 413) && isContextWindowExceededError(detail)) {
+    return CONTEXT_WINDOW_EXCEEDED_CODE
+  }
+  if (status === 413) return REQUEST_BODY_TOO_LARGE_CODE
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) {
-    if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
     return 'INVALID_REQUEST'
   }
   if (status >= 500) return 'SERVER'
@@ -665,6 +667,9 @@ export class DeepSeekAdapter extends LlmAdapter {
           if (providerError?.message) message = providerError.message
         } catch {
           // The HTTP status remains authoritative when a gateway returns malformed JSON.
+        }
+        if (response.status === 413 && providerError?.message === undefined) {
+          message = 'DeepSeek request body exceeds the gateway byte limit (HTTP 413)'
         }
         const detail = [providerError?.code, providerError?.type, providerError?.message]
           .filter((field): field is string => typeof field === 'string')

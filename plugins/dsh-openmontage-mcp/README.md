@@ -24,6 +24,19 @@ MCP channel; do not pass the CI-only `/exchange/openmontage/<project_id>` path
 to a local `Read` tool. Use `sync_project_exports` or `export_project_file` only
 when a shared mount or media delivery is needed.
 
+After `submit_video_job`, drive each client-owned stage with
+`begin_client_stage` -> zero or more stage-allowed `invoke_openmontage_tool`
+calls -> `submit_client_stage`. Do not invent an invocation when the stage's
+tool list is empty. `begin_client_stage` returns `jobId`, `stage`,
+`stageAttempt`, and `leaseToken`; map them to the top-level `job_id`, `stage`,
+`stage_attempt`, and `lease_token` arguments. Every non-catalog invocation also
+requires a non-empty stable `idempotency_key`. Selector, preflight, ranking,
+generation, progress, and composition calls are not standalone provider APIs.
+`submit_client_stage` requires `artifacts` to be keyed by canonical artifact
+name, for example
+`{"research_brief": {<brief fields>}}`, rather than receiving the brief fields
+directly at the `artifacts` level.
+
 ## Configuration (read at load time)
 
 | Env var | Meaning | Default |

@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "files": [
     "index.js",
     "cordis.patch.yml",

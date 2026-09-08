@@ -1,0 +1,11 @@
+version: 1
+scenario: openmontage-guidance
+profile: headless
+composition: openmontage-guidance
+recording: live
+sessionFormat:
+  version: 1
+  coverage: [adjacent-migration]
+header:
+  class: openmontage-guidance
+  pin: true

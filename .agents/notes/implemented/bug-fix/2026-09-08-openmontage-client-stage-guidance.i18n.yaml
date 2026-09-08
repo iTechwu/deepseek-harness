@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-08-openmontage-client-stage-guidance.md
-2026-09-08-openmontage-client-stage-guidance.md: 196980e86adb385ca18f3c9534834a5ef5c29b89
-2026-09-08-openmontage-client-stage-guidance.zh.md: c4cfdee711246706515de259ade47566395bde61
+2026-09-08-openmontage-client-stage-guidance.md: 68b7ba38efde63a1cc9c3bb21fff403c01791c29
+2026-09-08-openmontage-client-stage-guidance.zh.md: 5a89ad4df65812e112636485d4ef8fdfe3b73d92

@@ -6,7 +6,7 @@
   "license": "MIT",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "pnpm --dir ../.. exec vitest run plugins/dsh-openmontage-mcp/test/plugin.test.mjs"
   },
   "files": [
     "index.js",

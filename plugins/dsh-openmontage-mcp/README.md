@@ -1,5 +1,7 @@
 # dsh-openmontage-mcp
 
+English | [中文](README.zh.md)
+
 A DeepSeek Harness (DSH) **bundle** that registers the OpenMontage MCP server as
 an additional MCP client in the `web` profile, and adds a system-prompt section
 telling the model when to use it.
@@ -28,25 +30,31 @@ After `submit_video_job`, drive each client-owned stage with
 `begin_client_stage` -> zero or more stage-allowed `invoke_openmontage_tool`
 calls -> `submit_client_stage`. Do not invent an invocation when the stage's
 tool list is empty. `begin_client_stage` returns `jobId`, `stage`,
-`stageAttempt`, and `leaseToken`; map them to the top-level `job_id`, `stage`,
-`stage_attempt`, and `lease_token` arguments. Every non-catalog invocation also
-requires a non-empty stable `idempotency_key`. Selector, preflight, ranking,
-generation, progress, and composition calls are not standalone provider APIs.
-`submit_client_stage` requires `artifacts` to be keyed by canonical artifact
-name, for example
+`stageAttempt`, `leaseToken`, and `stageContract`; map the lease fields to the
+top-level `job_id`, `stage`, `stage_attempt`, and `lease_token` arguments. Every
+non-catalog invocation also requires a non-empty stable `idempotency_key`.
+Selector, preflight, ranking, generation, progress, and composition calls are
+not standalone provider APIs.
+Treat `stageContract` as authoritative for that attempt: read every
+`instructionFiles` entry through `read_openmontage_file`, and map each returned
+result to `instruction_provenance` as
+`{"path": result.relative_path, "content_hash": result.content_hash}`.
+`declaredTools` contains raw pipeline-manifest vocabulary; pass only exact names
+from `gatewayTools` to `invoke_openmontage_tool`. Key submitted `artifacts` by
+`produces`. For example,
 `{"research_brief": {<brief fields>}}`, rather than receiving the brief fields
 directly at the `artifacts` level.
 
-## Configuration (read at load time)
+## Credential
 
-| Env var | Meaning | Default |
+| Credential name | Meaning | Default |
 |---|---|---|
-| `MODELS_API_KEY` | Single Models API key sent to the gateway | *(required)* |
+| `MODELS_API_KEY` | Single Models API key resolved by the DSH credential service and sent to the gateway | *(required)* |
 
 The MCP endpoint is fixed at `https://ixicai.cn/mcp/montage`; users do not
 configure a CI-only base URL.
 
-The gateway validates `MODELS_API_KEY`; no OpenMontage service token or job attribution is configured in DSH.
+The MCP client requires `MODELS_API_KEY` before connecting, and the gateway validates it on every request. DSH configures no OpenMontage service token or job attribution.
 
 `failOnStartupError` is `false`: if OpenMontage is briefly unreachable the web
 profile still boots and the reconnect supervisor registers the tools once the

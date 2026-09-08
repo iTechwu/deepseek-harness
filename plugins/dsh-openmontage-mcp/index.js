@@ -1,6 +1,6 @@
 /**
- * OpenMontage guidance: a small host plugin that registers a system-prompt
- * section telling the model when to reach for the mcp__openmontage__* tools.
+ * OpenMontage Host policy: registers workflow guidance and protects reference
+ * inspection from unrelated or stalled MCP calls.
  *
  * The MCP client already exposes the tools with OpenMontage's own descriptions;
  * this section makes the "when to use OpenMontage" decision explicit and more
@@ -9,10 +9,12 @@
  * @module @dofe/dsh-openmontage-mcp
  */
 
+import { applyWorkflowGuard } from './workflow-guard.js'
+
 export const name = 'openmontage-guidance'
 
-/** The prompt registry this plugin contributes a section to. */
-export const inject = ['systemPrompt']
+/** The prompt and tool registries this plugin contributes policy to. */
+export const inject = ['systemPrompt', 'tools']
 
 /** Section order: right after the persona (order 0), before the tool sections. */
 const ORDER = 5
@@ -38,7 +40,8 @@ const GUIDANCE = `OpenMontage 复杂视频生成：当用户需要脚本、分�
 
 本地视频/本地文件作为参考源：只使用 OpenMontage MCP capabilities 返回的上传或导入流程，把工具返回的公开产物地址交给后续工具；不要猜测服务器路径、容器地址或内部端口。`
 
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
+  applyWorkflowGuard(ctx, config)
   ctx.systemPrompt.section({
     name: 'openmontage:guidance',
     order: ORDER,

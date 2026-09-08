@@ -8,8 +8,19 @@
 
 - OpenMontage MCP 工具以 DSH 服务限定命名空间 `mcp__openmontage__<tool>` 注册为原生工具，例如 `mcp__openmontage__submit_video_job`。
 - 提示词段落（`openmontage:guidance`）指示模型对脚本化、多镜头、编辑或克隆重制任务依次调用 `mcp__openmontage__openmontage_capabilities` → `prepare_reference_clone` → `submit_video_job`。持续 5–10 秒的连续单镜头短片应改用 Media MCP。
+- Agent 级工作流守卫会在检查已准备的参考项目时收窄 MCP 目录，并在再次执行远程调用前阻止重复的等价失败。
 
 `prepare_reference_clone` 是一项同步的长时间操作，因为它可能下载源视频并运行 ffmpeg／转写分析。组合包为该调用提供最长 10 分钟。如果客户端报告超时，请保留返回的 `project_id`，并在重试前调用 `mcp__openmontage__reference_clone_status`；重试会复用已完成的项目。状态变为 `prepared` 后，调用 `list_project_files`。对于 JSON／Markdown 分析文件，使用 `read_project_file`，让远程客户端通过已认证的 MCP 通道接收文本；不要把仅 CI 可用的 `/exchange/openmontage/<project_id>` 路径传给本地 `Read` 工具。只有在需要共享挂载或交付媒体时，才使用 `sync_project_exports` 或 `export_project_file`。
+
+参考项目处于 `prepared` 状态时，本地工具仍然可用，但 MCP 目录只保留 OpenMontage 能力查询、参考项目状态、项目文件列举与读取、项目导出和 Job 提交工具。此时不能再次调用 `prepare_reference_clone`，也不能在 Job 创建前调用 `list_video_artifacts`。成功执行 `submit_video_job` 或收到新的用户消息后，完整工具目录恢复。
+
+## 循环防护
+
+Host 插件默认在三个等价的无进展结果后为对应 Agent 打开熔断。它按规范化结果内容识别失败，因此改变无效的 `job_id` 无法绕过检测。成功但内容不变的 `list_project_files` 结果也属于无进展。达到阈值的结果继续保留在审计日志中，同时加入纠偏模型上下文；之后对该工具的调用会在远程工具体运行前被拒绝。
+
+`reference_clone_status`、`get_video_job` 和 `list_video_job_events` 属于轮询豁免，因为状态暂时不变是正常情况。成功且发生变化的结果会重置该工具的计数。新用户消息会重置对应 Agent 的全部熔断，一个 Agent 的状态不会影响另一个 Agent。
+
+部署需要不同限制时，可在 Host 插件行中把 `stalledOutcomeThreshold` 设置为不小于二的整数。无效值会在插件加载时失败。
 
 调用 `submit_video_job` 后，按 `begin_client_stage` -> 零次或多次该阶段允许的 `invoke_openmontage_tool` 调用 -> `submit_client_stage` 驱动每个客户端负责的阶段。阶段工具列表为空时，不要虚构调用。`begin_client_stage` 返回 `jobId`、`stage`、`stageAttempt`、`leaseToken` 和 `stageContract`；把 lease 字段映射到顶层参数 `job_id`、`stage`、`stage_attempt` 和 `lease_token`。每次非 catalog 调用还必须提供稳定的非空 `idempotency_key`。Selector、preflight、ranking、generation、progress 和 composition 调用不是独立的 provider API。
 

@@ -14,6 +14,9 @@ telling the model when to use it.
   `mcp__openmontage__openmontage_capabilities` → `prepare_reference_clone` →
   `submit_video_job` for scripted, multi-shot, edited, or clone-recreate tasks.
   A 5–10 second continuous single-shot clip belongs to the Media MCP instead.
+- An Agent-local workflow guard narrows the MCP catalog while a prepared
+  reference is being inspected and stops repeated equivalent failures before
+  another remote call runs.
 
 `prepare_reference_clone` is a synchronous, long-running operation because it
 may download a source video and run ffmpeg/transcription analysis. The bundle
@@ -25,6 +28,31 @@ retrying; completed projects are reused on retry. Once the status is
 MCP channel; do not pass the CI-only `/exchange/openmontage/<project_id>` path
 to a local `Read` tool. Use `sync_project_exports` or `export_project_file` only
 when a shared mount or media delivery is needed.
+
+While a reference project is `prepared`, local tools remain available but the
+MCP catalog contains only OpenMontage capabilities, reference status, project
+listing and reading, project export, and job submission tools. In particular,
+another `prepare_reference_clone` and pre-Job `list_video_artifacts` call are
+not available. A successful `submit_video_job` or a new user message restores
+the complete catalog.
+
+## Loop protection
+
+The Host plugin opens an Agent-local circuit after three equivalent stalled
+outcomes by default. It recognizes failures by their normalized result content,
+so changing an invalid `job_id` does not evade detection. It also treats an
+unchanged successful `list_project_files` result as stalled. The threshold
+result remains in the audit log and adds corrective model context; later calls
+to that tool are denied before the remote body runs.
+
+`reference_clone_status`, `get_video_job`, and `list_video_job_events` are
+exempt because unchanged status results are legitimate polling. A successful
+changed outcome resets that tool's count. A new user message resets every
+circuit for its Agent, and one Agent never changes another Agent's state.
+
+Set `stalledOutcomeThreshold` on the Host plugin row to an integer greater than
+or equal to two when a deployment needs a different limit. Invalid values fail
+when the plugin loads.
 
 After `submit_video_job`, drive each client-owned stage with
 `begin_client_stage` -> zero or more stage-allowed `invoke_openmontage_tool`

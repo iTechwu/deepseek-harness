@@ -10,8 +10,10 @@
   },
   "files": [
     "index.js",
+    "workflow-guard.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.zh.md"
   ],
   "exports": {
     ".": "./index.js",

@@ -63,6 +63,11 @@ top-level `job_id`, `stage`, `stage_attempt`, and `lease_token` arguments. Every
 non-catalog invocation also requires a non-empty stable `idempotency_key`.
 Selector, preflight, ranking, generation, progress, and composition calls are
 not standalone provider APIs.
+The outer `operation: "generate"` selects the Gateway lifecycle and does not
+replace a logical tool's own operation. For `video_compose`, pass the selected
+tool operation inside `inputs`, such as outer `operation: "generate"` together
+with `inputs.operation: "render"`; use the live input schema for other allowed
+values.
 Treat `stageContract` as authoritative for that attempt: read every
 `instructionFiles` entry through `read_openmontage_file`, and map each returned
 result to `instruction_provenance` as

@@ -45,6 +45,8 @@ test('guidance carries the complete client-stage lifecycle', async () => {
   expect(section.text).toMatch(/只能把 gatewayTools 中的精确工具名传给 invoke_openmontage_tool/)
   expect(section.text).toMatch(/artifacts 必须以 produces 中的标准产物名为顶层 key/)
   expect(section.text).toMatch(/不能只传 tool_name、operation、inputs/)
+  expect(section.text).toMatch(/外层 operation="generate" 只表示网关执行生命周期/)
+  expect(section.text).toMatch(/video_compose 必须在 inputs 内另传 operation="render"/)
   expect(section.text).toMatch(/{"research_brief": {"version":"1.0", \.\.\.}}/)
   expect(section.text).toMatch(/不能把 version、topic 等 brief 字段直接放在 artifacts 顶层/)
   expect(section.text).not.toMatch(/172\.30\.30\.11|127\.0\.0\.1|localhost|:8765/)

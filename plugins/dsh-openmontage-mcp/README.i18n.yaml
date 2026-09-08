@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write plugins/dsh-openmontage-mcp/README.md
-README.md: e26675fec1f1ae178af717bd40783d1648ca0ffe
-README.zh.md: 300fd507e2f36d658d0d0da1b2c1d495f4b4f06c
+README.md: ead7c1b4d198546a39fae227774a18152f998bf2
+README.zh.md: 116b95ab1e13d49c240426334d5f5cb05de3b20a

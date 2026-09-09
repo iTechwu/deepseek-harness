@@ -140,6 +140,13 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 /** Default per-request output-token cap. */
 export const DEFAULT_MAX_TOKENS = 256_000
+/** Public DoFe/Z.AI GLM-5.3 endpoints accept at most 128K generated tokens. */
+const GLM_53_MAX_TOKENS = 131_072
+const GLM_53_MODEL_PATTERN = /^glm-5\.3(?:-flash)?$/iu
+
+export function modelMaxTokens(model: string, fallback: number): number {
+  return GLM_53_MODEL_PATTERN.test(model) ? Math.min(fallback, GLM_53_MAX_TOKENS) : fallback
+}
 /** Default bound on accumulated base64 image payload after Files API fallback. */
 export const DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 /** Deterministic raw-byte removal step. */
@@ -472,13 +479,21 @@ export class DeepSeekAdapter extends LlmAdapter {
     }
     const apiKey = await this.config.resolveApiKey(connection)
     const userId = this.config.resolveUserId()
+    const configuredModel = connection.models.find(entry => entry.id === options.model)
+    const configuredModelMaxTokens = configuredModel?.maxTokens
+    const requestedMaxTokens = options.maxTokens ?? configuredModelMaxTokens ?? connection.maxTokens
+    const effectiveMaxTokens = Math.min(
+      modelMaxTokens(options.model, requestedMaxTokens),
+      configuredModelMaxTokens ?? Number.MAX_SAFE_INTEGER,
+    )
+    const effectiveOptions = { ...options, maxTokens: effectiveMaxTokens }
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal
       : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
     const iterator = this.request(
-      options,
+      effectiveOptions,
       watchdog.signal,
       connection,
       apiKey,

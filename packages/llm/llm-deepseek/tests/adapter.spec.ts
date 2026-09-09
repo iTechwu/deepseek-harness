@@ -1216,6 +1216,26 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.requests[1]).toMatchObject({ max_tokens: 8_192 })
   })
 
+  it('caps explicit GLM-5.3 output requests at the public 128K limit', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+
+    await assemble(ctx, { model: 'glm-5.3-flash', messages: [], maxTokens: 256_000 })
+
+    expect(server.requests[0]).toMatchObject({ max_tokens: 131_072 })
+  })
+
+  it('honors a catalog model output cap for larger explicit requests', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url, {
+      models: [{ id: 'catalog-capped', maxTokens: 4096 }],
+    })
+
+    await assemble(ctx, { model: 'catalog-capped', messages: [], maxTokens: 32_000 })
+
+    expect(server.requests[0]).toMatchObject({ max_tokens: 4096 })
+  })
+
   it('publishes only off and omits the wire effort when thinking is disabled', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const ctx = await harness(server.url, { thinking: 'disabled' })

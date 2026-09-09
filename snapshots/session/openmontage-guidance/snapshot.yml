@@ -1,0 +1,8 @@
+version: 1
+scenario: openmontage-guidance
+profile: headless
+composition: openmontage-guidance
+recording: live
+header:
+  class: openmontage-guidance
+  pin: true

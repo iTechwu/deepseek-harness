@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-08-openmontage-client-stage-guidance.md
+2026-09-08-openmontage-client-stage-guidance.md: fb9fa0d981d516fbcabaefeb947a60571e1b8069
+2026-09-08-openmontage-client-stage-guidance.zh.md: 6f5a177e15e1f4d47be1ff6b52d56eed9b674c6f

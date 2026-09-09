@@ -9,6 +9,11 @@ const fsHarness = vi.hoisted(() => ({
   nextReadError: undefined as NodeJS.ErrnoException | undefined,
 }))
 
+const moduleHarness = vi.hoisted(() => ({
+  base: undefined as string | undefined,
+  request: undefined as string | undefined,
+}))
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
@@ -22,6 +27,27 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return (actual.readFile as (path: unknown, ...args: never[]) => Promise<unknown>)(path, ...rest)
     }) as typeof actual.readFile,
   }
+})
+
+vi.mock('node:module', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:module')>()
+  const createRequire = ((filename: string | URL) => {
+    const created = actual.createRequire(filename)
+    if (String(filename) !== moduleHarness.base) return created
+    const resolve = created.resolve.bind(created)
+    created.resolve = ((request: string, options?: { paths?: string[] }) => {
+      if (request === moduleHarness.request) return '/virtual/package.json'
+      return resolve(request, options)
+    }) as NodeJS.Require['resolve']
+    return created
+  }) as typeof actual.createRequire
+  return new Proxy(actual, {
+    get(target, property, receiver): unknown {
+      if (property === 'createRequire') return createRequire
+      const value: unknown = Reflect.get(target, property, receiver)
+      return value
+    },
+  })
 })
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -39,6 +65,8 @@ afterEach(async () => {
 
 beforeEach(() => {
   fsHarness.nextReadError = undefined
+  moduleHarness.base = undefined
+  moduleHarness.request = undefined
 })
 
 describe('display order', () => {
@@ -335,6 +363,25 @@ describe('rows naming a plugin that cannot be resolved', () => {
     const [preset] = await scanRoot(
       { path: join(home, 'presets'), trust: 'user' }, pathToFileURL(join(home, 'app/')).href)
 
+    expect(preset?.broken).toBeUndefined()
+  })
+
+  it('accepts a package exposed by the harness-base CommonJS resolver', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-presets-resolver-'))
+    roots.push(home)
+    const base = pathToFileURL(join(home, 'profile', 'package.json')).href
+    moduleHarness.base = base
+    moduleHarness.request = '@scope/resolver-only/package.json'
+    await mkdir(join(home, 'presets', 'probe'), { recursive: true })
+    await writeFile(
+      join(home, 'presets', 'probe', COMPOSITION_FILE),
+      "- id: p\n  name: '@scope/resolver-only'\n",
+    )
+
+    const [preset] = await scanRoot({ path: join(home, 'presets'), trust: 'user' }, base)
+
+    // Desktop-style package overlays leave the profile's node_modules sparse;
+    // health must ask the same anchored resolver that the Loader can import through.
     expect(preset?.broken).toBeUndefined()
   })
 

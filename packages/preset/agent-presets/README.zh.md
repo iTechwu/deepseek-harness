@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-agent-presets` 让每个 agent（智能体）会话都从同一个 preset 组装：preset 是一个目录，内含一份 `agent.cordis.yml`，列出该会话运行的插件。命名某个 preset 的会话会获得该 preset 的工具、提示词段落与 skill（技能），而其他会话各自保持自己的，因此一个进程可以同时运行多个组装方式不同的 agent。本包维护 preset 名单：它列出已配置根目录提供的每个 preset——随附的与你自己放在 `<dshHome>/.agent-presets` 下的——在 preset 无法启动会话时给出原因，并允许你通过复制既有 preset 来创建新 preset。默认 preset 是一项可按部署或按用户覆盖的设置，会话只有在尚未产出任何内容时才能切换 preset。preset 的权限恰好等于它所引用插件的权限，因此你创作的 preset 与 shell 访问权限同级。
+使用 `dsh-agent-presets` 为每个会话提供某个 preset 的 `agent.cordis.yml` 所指定的工具、提示词段落与 skill（技能）。一个进程可以运行使用不同 preset 的会话，同时保持它们的状态相互隔离。preset 名单合并随附定义、已配置根目录与用户根目录，会报告 preset 无法启动的原因，也能通过复制现有 preset 创建本地 preset。部署与用户都可选择默认值；只有空会话可以切换 preset。请将每个自行编写的 preset 视为受信任配置，因为它会授予其所选插件的能力。
 
 ## 目录
 
@@ -149,7 +149,6 @@ agent-presets:
 - [会话包映射](../../session/README.zh.md)——preset 切换所追加的持久会话记录。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-presets)——每个受支持配置字段及其源声明。
 - [按会话组装 agent preset 的 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.zh.md)——设计理由与备选方案。
-- [按 preset 常驻挂载的 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-08-per-preset-standing-mounts.zh.md)——挂载为何是常驻且共享的。
 
 -----
 
@@ -174,7 +173,7 @@ agent-presets:
 - **代际只以组装文件为键**——stamp 检查只察觉 `agent.cordis.yml` 的变化，察觉不到旁边 skill 文件或资产的编辑；那些编辑要等组装文件本身变动或进程重启才达到新会话。
 - **被替代的代际永不回收**——已加入的会话保持其运行所在的代际，而名单没有加入计数可以判断最后一个何时离开，因此整棵子树一直挂到进程结束。代价按代际计而非按会话计，但并非为零：`dsh-skill-filesystem` 默认监听自己的根目录，因此每一轮「编辑后建会话」都会新增一套活的 watcher。
 - **副本从不被实际挂载以校验**——它与来源逐字节相同，因此磁盘上已坏的来源会产出与来源同样损坏的副本；发现过程的健康检查会在下一次读取名单时把两行都标出来，而不是把失败推迟到会话启动。
-- **健康问的是「装没装」，不是「能不能 import」**——发现过程证明组装能以加载器方言解析、由具名行组成，且每一行它能证明会启动的行所引用的包装在 harness 基准之上、或所引用的文件确实存在；它从不 import 任何一个，因此入口文件缺失的包、在 apply 时抛错的插件、以及永远等待某个服务的插件，都仍在第一个会话处失败。`disabled` 是加载器唯一会插值的条目字段，因此在该字段写了表达式的行会被跳过，而不是仅凭文件下判断。
+- **健康问的是「装没装」，不是「能不能 import」**——发现过程证明组装能以加载器方言解析、由具名行组成，且每一行它能证明会启动的行所引用的包装在 harness 基准之上、可由基于该基准的 CommonJS manifest 解析器提供，或所引用的文件确实存在；它从不 import 任何一个，因此入口文件缺失的包、在 apply 时抛错的插件、以及永远等待某个服务的插件，都仍在第一个会话处失败。`disabled` 是加载器唯一会插值的条目字段，因此在该字段写了表达式的行会被跳过，而不是仅凭文件下判断。
 - **副本是会漂移的快照**——升级部署不会更新随附 preset 的副本，本层也没有表达「standard 加一处改动」的 patch 语义；随附集合自己也接受同样的代价——`cordis` 与 `code` 都复制了 `standard` 的完整组装并在此基础上编辑——换来整份组装在一个文件里可读。
 - **根目录扫描不做监听**——每次读取都实际访问文件系统，这让名单保持新鲜，但每次 `list()` 会对每个根目录产生一次 `readdir`。
 

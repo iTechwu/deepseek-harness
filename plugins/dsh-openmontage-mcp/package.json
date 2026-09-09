@@ -5,10 +5,15 @@
   "type": "module",
   "license": "MIT",
   "main": "index.js",
+  "scripts": {
+    "test": "pnpm --dir ../.. exec vitest run plugins/dsh-openmontage-mcp/test/plugin.test.mjs"
+  },
   "files": [
     "index.js",
+    "workflow-guard.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.zh.md"
   ],
   "exports": {
     ".": "./index.js",

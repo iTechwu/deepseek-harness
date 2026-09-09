@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, REQUEST_BODY_TOO_LARGE_CODE } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -20,6 +20,7 @@ import type {
   ModelModality,
   ResolvedRetryPolicy,
   StreamChunk,
+  SystemPromptUpdate,
 } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
@@ -63,6 +64,12 @@ export interface DeepSeekCatalogModel {
   imagePixelBudget?: number | 'low'
   /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */
   imageMaxBytes?: number
+  /**
+   * `'in-history'` declares that the endpoint reads the latest `system`
+   * message at any position of the conversation as the complete effective
+   * system prompt; omission means only a leading system message is read.
+   */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 
 /**
@@ -140,6 +147,13 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 /** Default per-request output-token cap. */
 export const DEFAULT_MAX_TOKENS = 256_000
+/** Public DoFe/Z.AI GLM-5.3 endpoints accept at most 128K generated tokens. */
+const GLM_53_MAX_TOKENS = 131_072
+const GLM_53_MODEL_PATTERN = /^glm-5\.3(?:-flash)?$/iu
+
+export function modelMaxTokens(model: string, fallback: number): number {
+  return GLM_53_MODEL_PATTERN.test(model) ? Math.min(fallback, GLM_53_MAX_TOKENS) : fallback
+}
 /** Default bound on accumulated base64 image payload after Files API fallback. */
 export const DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 /** Deterministic raw-byte removal step. */
@@ -331,12 +345,14 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
  */
 export function httpErrorCode(status: number, error?: WireError['error']): string {
   if (status === 401 || status === 403) return 'AUTH'
-  if (status === 413) return 'INVALID_REQUEST'
   const detail = [error?.code, error?.type, error?.message].filter(Boolean).join(' ')
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  if ((status === 400 || status === 413) && isContextWindowExceededError(detail)) {
+    return CONTEXT_WINDOW_EXCEEDED_CODE
+  }
+  if (status === 413) return REQUEST_BODY_TOO_LARGE_CODE
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) {
-    if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
     return 'INVALID_REQUEST'
   }
   if (status >= 500) return 'SERVER'
@@ -407,6 +423,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
+      ...configured?.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: configured.systemPromptUpdate },
       ...connection.defaults.thinking === 'disabled'
         ? {
           reasoning: {
@@ -470,13 +487,21 @@ export class DeepSeekAdapter extends LlmAdapter {
     }
     const apiKey = await this.config.resolveApiKey(connection)
     const userId = this.config.resolveUserId()
+    const configuredModel = connection.models.find(entry => entry.id === options.model)
+    const configuredModelMaxTokens = configuredModel?.maxTokens
+    const requestedMaxTokens = options.maxTokens ?? configuredModelMaxTokens ?? connection.maxTokens
+    const effectiveMaxTokens = Math.min(
+      modelMaxTokens(options.model, requestedMaxTokens),
+      configuredModelMaxTokens ?? Number.MAX_SAFE_INTEGER,
+    )
+    const effectiveOptions = { ...options, maxTokens: effectiveMaxTokens }
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal
       : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
     const iterator = this.request(
-      options,
+      effectiveOptions,
       watchdog.signal,
       connection,
       apiKey,
@@ -665,6 +690,9 @@ export class DeepSeekAdapter extends LlmAdapter {
           if (providerError?.message) message = providerError.message
         } catch {
           // The HTTP status remains authoritative when a gateway returns malformed JSON.
+        }
+        if (response.status === 413 && providerError?.message === undefined) {
+          message = 'DeepSeek request body exceeds the gateway byte limit (HTTP 413)'
         }
         const detail = [providerError?.code, providerError?.type, providerError?.message]
           .filter((field): field is string => typeof field === 'string')

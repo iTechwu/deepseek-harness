@@ -23,7 +23,7 @@
 
 import { existsSync } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { isBuiltin } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { load } from 'js-yaml'
@@ -98,20 +98,23 @@ export function entryListProblem(rows: unknown, at = ''): string | undefined {
 }
 
 /**
- * Whether a package name is installed anywhere above `base`.
+ * Whether a package name is available from `base`.
  *
- * Node's own upward `node_modules` walk, stopping at the package directory:
- * the question is whether the package is there at all, which is what a row
- * naming a package a rename or an uninstall took away gets wrong. A pnpm
- * store link answers through the symlink, and a link left dangling by a
- * deleted checkout answers false — the shape a stale profile install leaves.
+ * The fast path walks upward through `node_modules`, stopping at the package
+ * manifest: the question is whether the package is there at all, which is
+ * what a row naming a package a rename or an uninstall took away gets wrong.
+ * A pnpm store link answers through the symlink, and a link left dangling by
+ * a deleted checkout answers false — the shape a stale profile install leaves.
  *
+ * A launcher may instead expose packages through a CommonJS resolver hook,
+ * as long as it resolves an exact package-manifest request from the supplied
+ * base. That fallback imports nothing and runs only after the disk walk misses.
  * `existsSync` rather than the async `stat`: the walk is a handful of lookups
- * per package and runs on every roster read, where 150 promise round-trips
- * cost more than the lookups they wrap.
+ * per package and runs on every roster read, where 150 promise round-trips cost
+ * more than the lookups they wrap.
  * @param name - the package specifier, possibly carrying a subpath.
  * @param base - the URL to walk up from.
- * @returns true when the package directory is installed above `base`.
+ * @returns true when the package is installed above `base` or its anchored resolver exposes the manifest.
  */
 function packageInstalled(name: string, base: string): boolean {
   // A scoped name spends two segments on the package; anything after either
@@ -121,8 +124,14 @@ function packageInstalled(name: string, base: string): boolean {
   for (;;) {
     if (existsSync(join(dir, 'node_modules', pkg, 'package.json'))) return true
     const parent = dirname(dir)
-    if (parent === dir) return false
+    if (parent === dir) break
     dir = parent
+  }
+  try {
+    createRequire(base).resolve(`${pkg}/package.json`)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -130,7 +139,8 @@ function packageInstalled(name: string, base: string): boolean {
  * Whether one classified row names a module that exists, importing nothing.
  *
  * Each kind is checked by what actually answers it. A package name is looked
- * up on disk — the same upward walk Node's own resolver starts with — and a
+ * up on disk — the same upward walk Node's own resolver starts with — then by
+ * an explicit-parent CommonJS resolver when a launcher supplies one. A
  * relative or `file:` specifier is statted, because both name one file.
  * Nothing is evaluated either way, so a row is judged without its plugin
  * observing that discovery looked.
@@ -138,18 +148,10 @@ function packageInstalled(name: string, base: string): boolean {
  * `import.meta.resolve` is deliberately not the fallback for a name the disk
  * lookup misses. Its `parentURL` argument only takes effect under
  * `--experimental-import-meta-resolve`, which no launch passes, so it would
- * resolve from THIS module rather than from the harness — reporting a
- * dependency visible only to this package as healthy, and a plugin the mount
- * can import as broken. The resolver that does honour an explicit parent is
- * the Loader's internal one, whose `resolveSync` signature differs between
- * Node 22 and 24 (`ModuleLoader.fromInternal` tags the raw object rather than
- * normalising it); reaching into that for a case the walk already covers buys
- * nothing a supported deployment needs, because every plugin a preset names
- * is installed beside the roster.
- *
- * What that gives up: a package resolvable ONLY through a loader hook — an
- * import map, or a tree with no `node_modules` at all — is reported broken.
- * No supported install produces one.
+ * resolve from THIS module rather than from the harness. The CommonJS resolver
+ * honors the explicit base and is also the extension point used by launchers
+ * whose package overlay does not physically populate the profile's
+ * `node_modules`.
  * @param row - the classified specifier, from {@link classifyRowSpecifier}.
  * @param presetBase - directory URL a preset-relative specifier resolves against.
  * @param harnessBase - base URL a package name resolves against.

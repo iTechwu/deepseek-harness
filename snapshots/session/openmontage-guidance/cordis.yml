@@ -1,0 +1,3 @@
+- insert:
+    - id: openmontage-guidance
+      name: '../../../plugins/dsh-openmontage-mcp/index.js'

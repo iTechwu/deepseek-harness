@@ -12,6 +12,7 @@ import LlmRuntime, { ToolCallId, createUserMessage,
   ProviderRequestId,
   QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
+  REQUEST_BODY_TOO_LARGE_CODE,
   userAgent,
 } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -1215,6 +1216,26 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.requests[1]).toMatchObject({ max_tokens: 8_192 })
   })
 
+  it('caps explicit GLM-5.3 output requests at the public 128K limit', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+
+    await assemble(ctx, { model: 'glm-5.3-flash', messages: [], maxTokens: 256_000 })
+
+    expect(server.requests[0]).toMatchObject({ max_tokens: 131_072 })
+  })
+
+  it('honors a catalog model output cap for larger explicit requests', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url, {
+      models: [{ id: 'catalog-capped', maxTokens: 4096 }],
+    })
+
+    await assemble(ctx, { model: 'catalog-capped', messages: [], maxTokens: 32_000 })
+
+    expect(server.requests[0]).toMatchObject({ max_tokens: 4096 })
+  })
+
   it('publishes only off and omits the wire effort when thinking is disabled', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const ctx = await harness(server.url, { thinking: 'disabled' })
@@ -1419,7 +1440,8 @@ describe('DeepSeekAdapter against a mock server', () => {
       .toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
     expect(httpErrorCode(400, { message: 'invalid input: temperature exceeds maximum allowed value' }))
       .toBe('INVALID_REQUEST')
-    expect(httpErrorCode(413, { code: 'context_length_exceeded' })).toBe('INVALID_REQUEST')
+    expect(httpErrorCode(413, { code: 'context_length_exceeded' })).toBe(CONTEXT_WINDOW_EXCEEDED_CODE)
+    expect(httpErrorCode(413)).toBe(REQUEST_BODY_TOO_LARGE_CODE)
   })
 
   it('distinguishes terminal quota exhaustion from transient HTTP 429 throttling', () => {
@@ -1446,6 +1468,25 @@ describe('DeepSeekAdapter against a mock server', () => {
     if (result.finish.kind !== 'error') throw new Error('expected an error finish')
     expect(result.finish.failure.code).toBe('SERVER')
     expect(result.finish.failure.message).toMatch(/HTTP 502/)
+  })
+
+  it('identifies a gateway body-size rejection without exposing the HTML response', async () => {
+    const server = await mockServer([{
+      kind: 'http-error',
+      status: 413,
+      body: '<html><h1>413 Request Entity Too Large</h1></html>',
+      contentType: 'text/html',
+    }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(result.finish).toEqual({
+      kind: 'error',
+      failure: {
+        message: 'DeepSeek request body exceeds the gateway byte limit (HTTP 413)',
+        code: REQUEST_BODY_TOO_LARGE_CODE,
+        status: 413,
+      },
+    })
   })
 
   it('maps unusual statuses to HTTP_<status>', () => {
@@ -1976,6 +2017,22 @@ describe('plugin registration and config', () => {
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {
     expect(() => resolveAdapterOptions({ models: [{ id: 'bad-cap', maxTokens }] }))
       .toThrow(/maxTokens must be a positive integer/)
+  })
+
+  it('surfaces a catalog model\'s in-history system prompt update mode and rejects any other mode', async () => {
+    const adapter = adapterOf({ models: [
+      { id: 'capable', systemPromptUpdate: 'in-history' },
+      { id: 'plain' },
+    ] })
+    await expect(adapter.resolveModel('deepseek-official', 'capable'))
+      .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
+    await expect(adapter.resolveModel('deepseek-official', 'plain'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    await expect(adapter.resolveModel('deepseek-official', 'not-in-catalog'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    expect(() => resolveAdapterOptions({
+      models: [{ id: 'bogus', systemPromptUpdate: 'leading' as unknown as 'in-history' }],
+    })).toThrow(/systemPromptUpdate must be "in-history" when present/)
   })
 
   it('rejects image request limits on a text-only catalog model', () => {

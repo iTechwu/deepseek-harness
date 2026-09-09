@@ -66,6 +66,6 @@ export async function runCli(): Promise<void> {
 // an explicit path check so the CLI works both as a Node entry and via Electron
 // with ELECTRON_RUN_AS_NODE=1.
 const invokedPath = process.argv[1]
-if (import.meta.main || (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href)) {
+if (import.meta.main || process.env.ELECTRON_RUN_AS_NODE === '1' || (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href)) {
   await runCli()
 }

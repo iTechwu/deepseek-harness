@@ -36,7 +36,7 @@ describe('locale host', () => {
   it('adds a live model response-language instruction only for an explicit preference', async () => {
     const ctx = new Context()
     await ctx.plugin(MemorySettings).await()
-    await ctx.plugin(SystemPrompt, { persona: '' }).await()
+    await ctx.plugin(SystemPrompt, { personaPrefix: '' }).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
 

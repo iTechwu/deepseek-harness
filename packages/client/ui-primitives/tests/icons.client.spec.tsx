@@ -55,6 +55,21 @@ describe('ic_ds_ icon set', () => {
     expect(container.querySelector('[id]')).toBeNull()
     expect(container.querySelector('[clip-path]')).toBeNull()
   })
+
+  it('keeps reusable SVG definition ids unique and resolvable', () => {
+    const renderedIcons = iconNames.flatMap((name) => {
+      const Icon = icons[name]!
+      return [<Icon key={`${name}-a`} />, <Icon key={`${name}-b`} />]
+    })
+    const { container } = render(<>{renderedIcons}</>)
+    const ids = [...container.querySelectorAll('[id]')].map(element => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const element of container.querySelectorAll('[mask],[clip-path]')) {
+      const reference = (element.getAttribute('mask') || element.getAttribute('clip-path'))?.match(/^url\(#(.+)\)$/u)?.[1]
+      expect(reference).toBeTruthy()
+      expect([...container.querySelectorAll('[id]')].some(definition => definition.id === reference)).toBe(true)
+    }
+  })
 })
 
 describe('FishLogo', () => {

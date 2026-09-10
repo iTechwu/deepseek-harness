@@ -7,7 +7,8 @@
 /* v8 ignore file -- built-bin acceptance exercises this self-executing dispatch. */
 
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
 
@@ -61,6 +62,10 @@ export async function runCli(): Promise<void> {
   }
 }
 
-if (import.meta.main) {
+// Electron's embedded Node does not expose Bun's `import.meta.main`; retain
+// an explicit path check so the CLI works both as a Node entry and via Electron
+// with ELECTRON_RUN_AS_NODE=1.
+const invokedPath = process.argv[1]
+if (import.meta.main || process.env.ELECTRON_RUN_AS_NODE === '1' || (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href)) {
   await runCli()
 }

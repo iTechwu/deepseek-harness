@@ -21,6 +21,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import { computeColumns, RIGHTBAR_DEFAULT_RATIO, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
+import { installModalOverlayIsolation } from './modal-overlay.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
@@ -128,7 +129,15 @@ export function AppFrame({
 }: AppFrameProps) {
   const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
   const viewport = layoutInfo.viewportWidth
+
+  useEffect(() => {
+    const frame = frameRef.current
+    const overlay = overlayRef.current
+    if (frame === null || overlay === null) return
+    return installModalOverlayIsolation(frame, overlay)
+  }, [])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useLayoutEffect(() => {
@@ -227,7 +236,7 @@ export function AppFrame({
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
       </>
-      <div className={css.overlayLayer} data-shell-overlay>
+      <div ref={overlayRef} className={css.overlayLayer} data-shell-overlay>
         {overlays}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}

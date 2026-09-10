@@ -254,3 +254,6 @@
   name: '@deepseek-ai/dsh-tool-ci'
   config:
     timeoutMs: 120000
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

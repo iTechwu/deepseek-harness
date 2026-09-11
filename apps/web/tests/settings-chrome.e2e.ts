@@ -38,7 +38,8 @@ describe('web e2e: settings modal and General preferences', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    browser = await chromium.launch()
+    const executablePath = process.env.DSH_AUDIT_BROWSER_EXECUTABLE
+    browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
     // Chinese browser: the shared page asserts the localized settings surface
     // the client derives from it (the English default has its own spec below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -54,12 +55,19 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it('opens the settings dialog, switches sections, and closes by every path', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-shell'))
-    const trigger = page.getByRole('button', { name: '设置', exact: true })
+    // Keep the trigger addressable for state assertions while the dialog makes it inert.
+    const trigger = page.getByRole('button', { name: '设置', exact: true, includeHidden: true })
     expect(await trigger.getAttribute('aria-haspopup')).toBe('dialog')
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
     await trigger.click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
+    await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true)
+    expect(await trigger.evaluate(element => element.closest('[inert]') !== null)).toBe(true)
+    const closeSettings = dialog.getByRole('button', { name: '关闭', exact: true })
+    await closeSettings.focus()
+    await page.keyboard.press('Tab')
+    expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true)
     expect(await trigger.getAttribute('aria-expanded')).toBe('true')
     // General is active by default; Permission, Language and Appearance are functional.
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBe('true')

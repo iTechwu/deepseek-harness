@@ -129,6 +129,24 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('does not close settings when Escape belongs to a nested dialog', () => {
+    mount()
+    openPanel()
+    const parent = screen.getByRole('dialog')
+    const child = document.createElement('section')
+    child.setAttribute('role', 'dialog')
+    child.setAttribute('aria-modal', 'true')
+    child.innerHTML = '<button>Child operation</button>'
+    parent.append(child)
+    child.querySelector('button')!.focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(parent.isConnected).toBe(true)
+    child.remove()
+    screen.getByRole('button', { name: 'Close' }).focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(parent.isConnected).toBe(false)
+  })
+
   it.each([
     { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
     { column: 'collapsed English', wide: false, dictionary: en, name: 'Settings' },
@@ -266,9 +284,10 @@ describe('SettingsPanel navigation', () => {
       ],
     })
     openPanel()
-    // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
+    // Per-instance clip-path ids differ even when the drawn icon is identical.
     const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Contributed']
-      .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
+      .map(name => Array.from(screen.getByRole('button', { name }).querySelectorAll('svg path'))
+        .map(path => path.getAttribute('d')).join('|'))
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
     // The three ids the shell names get their own glyph; every other section —

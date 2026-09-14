@@ -126,6 +126,17 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--from-default-profile', 'web', 'plugin', '--profile', 'x', 'add', 'y'])).toBe(1)
   })
 
+  it('answers a bare plugin help before rejecting the Electron-managed desktop profile', () => {
+    // The Desktop bootstrap injects `--profile desktop` ahead of `--help`.
+    expect(exitCode(['plugin', '--profile', 'desktop', '--help'])).toBe(0)
+    expect(exitCode(['plugin', '--profile', 'Desktop', '-h'])).toBe(0)
+    // Real management arguments stay rejected for the desktop profile.
+    expect(exitCode(['plugin', '--profile', 'desktop', 'add', '--help'])).toBe(1)
+    // Other profiles keep forwarding `--help` to pnpm verbatim.
+    expect(parse(['plugin', '--profile', 'tui', '--help']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['--help'] })
+  })
+
   it('keeps its own help for an invocation with no app to hand it to', () => {
     expect(exitCode(['--help'])).toBe(0)
     expect(exitCode(['-h'])).toBe(0)

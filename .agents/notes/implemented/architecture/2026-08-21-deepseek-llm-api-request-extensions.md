@@ -32,6 +32,8 @@ The `events` array contains complete canonical `SessionEvent` objects directly. 
 
 Disabled, pending, failed, unloading, disposed, structural, loose non-package, ordinary dependency, programmatic child-fiber, and in-memory dynamic-plugin entries are outside this package inventory. This definition reports package-backed composition facts the runtime can prove instead of inventing provenance for arbitrary callbacks.
 
+An anchored manifest resolver takes precedence over the physical package search path. A desktop launcher can select a newer installed package while an older profile copy remains on disk; bypassing that resolver reports a version the Loader did not select. Missing or hidden manifest exports fall back to the same anchor's physical lookup, preserving private manifests and tree precedence. Other resolver errors remain request failures. Loader-backed tests cover a selected package shadowing a physical copy, private manifests, and resolver-hook restoration.
+
 ## Deferred inventory caching
 
 The implementation deliberately recalculates the active package set for every request while caching manifest identities for the process lifetime. A synthetic host-only benchmark on Node v24.16.0, macOS arm64 used unique active relative plugin packages, 20 warm-up requests, then 500 measured requests for 25 and 100 entries and 250 for 500 entries. “First request” includes uncached manifest reads; “cached-provider median” returns a prebuilt field through the same registry, so it retains `structuredClone()` and freeze costs but excludes adapter JSON serialization and network time.

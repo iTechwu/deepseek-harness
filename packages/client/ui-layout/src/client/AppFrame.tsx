@@ -134,9 +134,8 @@ export function AppFrame({
 
   useEffect(() => {
     const frame = frameRef.current
-    const overlay = overlayRef.current
-    if (frame === null || overlay === null) return
-    return installModalOverlayIsolation(frame, overlay)
+    if (frame === null) return
+    return installModalOverlayIsolation(frame)
   }, [])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.

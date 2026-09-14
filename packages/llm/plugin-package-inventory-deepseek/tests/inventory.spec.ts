@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createRequire, registerHooks } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -169,6 +170,16 @@ describe('DeepSeek plugin package inventory', () => {
       .rejects.toThrow(/cannot resolve active package/)
   })
 
+  it('reads identity metadata when the plugin keeps its manifest private', async () => {
+    const { ctx, root } = await harness()
+    await packagePlugin(root, 'node_modules/private-manifest', {
+      name: 'private-manifest', version: '3.0.0', exports: './plugin.mjs',
+    })
+    await ctx.loader.create({ name: 'private-manifest' })
+    const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL })
+    expect(prepared.fields.dsh_plugin_packages?.packages).toEqual([{ name: 'private-manifest', version: '3.0.0' }])
+  })
+
   it('supports a direct embedding whose context has no base URL', async () => {
     const ctx = new Context()
     contexts.push(ctx)
@@ -201,6 +212,59 @@ describe('DeepSeek plugin package inventory', () => {
       { name: 'versioned-plugin', version: '2.0.0' },
     ])
   })
+
+  it('honors an anchored package resolver before a shadowed physical installation', async () => {
+    const { ctx, root } = await harness()
+    await packagePlugin(root, 'node_modules/overlay-plugin', { name: 'overlay-plugin', version: '1.0.0' })
+    await packagePlugin(root, 'selected', { name: 'overlay-plugin', version: '2.0.0' })
+    const selectedManifest = join(root, 'selected/package.json')
+    const originalManifest = createRequire(ctx.baseUrl!).resolve('overlay-plugin/package.json')
+    const hooks = registerHooks({
+      resolve(specifier, context, nextResolve) {
+        if (context.parentURL === ctx.baseUrl && specifier.startsWith('overlay-plugin/')) {
+          return { url: pathToFileURL(join(root, 'selected', specifier.slice('overlay-plugin/'.length))).href, shortCircuit: true }
+        }
+        return nextResolve(specifier, context)
+      },
+    })
+    try {
+      expect(createRequire(ctx.baseUrl!).resolve('overlay-plugin/package.json')).toBe(selectedManifest)
+      await ctx.loader.create({ name: 'overlay-plugin/plugin.mjs' })
+      const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL })
+      expect(prepared.fields.dsh_plugin_packages?.packages).toEqual([{ name: 'overlay-plugin', version: '2.0.0' }])
+    } finally {
+      hooks.deregister()
+    }
+    expect(createRequire(ctx.baseUrl!).resolve('overlay-plugin/package.json'))
+      .toBe(originalManifest)
+  })
+
+  it.each(['ERR_MODULE_NOT_FOUND', 'ERR_INVALID_PACKAGE_CONFIG'])(
+    'falls back only for missing manifest requests, preserving resolver error %s', async (code) => {
+      const { ctx, root } = await harness()
+      await packagePlugin(root, 'node_modules/resolver-error', { name: 'resolver-error', version: '1.0.0' })
+      await ctx.loader.create({ name: 'resolver-error/plugin.mjs' })
+      const failure = Object.assign(new Error('resolver refused the manifest'), { code })
+      const hooks = registerHooks({
+        resolve(specifier, context, nextResolve) {
+          if (context.parentURL === ctx.baseUrl && specifier === 'resolver-error/package.json') throw failure
+          return nextResolve(specifier, context)
+        },
+      })
+      try {
+        const preparation = ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL })
+        if (code === 'ERR_MODULE_NOT_FOUND') {
+          await expect(preparation).resolves.toMatchObject({ fields: { dsh_plugin_packages: {
+            packages: [{ name: 'resolver-error', version: '1.0.0' }],
+          } } })
+        } else {
+          await expect(preparation).rejects.toThrow('resolver refused the manifest')
+        }
+      } finally {
+        hooks.deregister()
+      }
+    },
+  )
 
   it('mirrors the standing preset bare-package override instead of its local node_modules', async () => {
     const { ctx, root } = await harness()

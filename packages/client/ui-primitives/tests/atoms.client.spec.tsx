@@ -360,6 +360,7 @@ describe('Menu', () => {
     // Outside the anchor wrapper subtree — overflow-clipping ancestors can't crop it.
     expect(container.contains(menu)).toBe(false)
     expect(menu.parentElement).toBe(document.body)
+    expect(document.getElementById(menu.dataset.dshPortalOwner!)).toBe(container.firstElementChild)
     expect(menu.style.top).not.toBe('')
     fireEvent.click(screen.getByRole('menuitem', { name: 'Alpha' }))
     expect(onSelect).toHaveBeenCalledWith('a')
@@ -372,6 +373,18 @@ describe('Menu', () => {
     expect(onClose).not.toHaveBeenCalled()
     fireEvent.pointerDown(document.body)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes an owned portal menu without closing its containing modal on Escape', () => {
+    const closeModal = vi.fn()
+    const closeMenu = vi.fn()
+    render(<Modal open title="Settings" closeLabel="Close" onClose={closeModal}>
+      <Menu portal open autoFocus anchor={<button>Choose</button>} items={items} onSelect={() => {}} onClose={closeMenu} />
+    </Modal>)
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Alpha' }), { key: 'Escape' })
+    expect(closeMenu).toHaveBeenCalledTimes(1)
+    expect(closeModal).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Choose' }))
   })
 
   it('portal mode resolves align=end / side=top to clamped left/top coordinates', () => {
@@ -419,6 +432,20 @@ describe('Menu', () => {
 })
 
 describe('Modal', () => {
+  it('leaves the parent open when Escape belongs to a nested dialog', () => {
+    const onClose = vi.fn()
+    render(<Modal open onClose={onClose} title="Parent" closeLabel="Close">
+      <section role="alertdialog" aria-modal="true"><button>Child action</button></section>
+    </Modal>)
+    const child = screen.getByRole('button', { name: 'Child action' })
+    child.focus()
+    fireEvent.keyDown(child, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    screen.getByRole('button', { name: 'Close' }).focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('is absent while closed; Escape and mask click call onClose', () => {
     const onClose = vi.fn()
     const { rerender } = render(

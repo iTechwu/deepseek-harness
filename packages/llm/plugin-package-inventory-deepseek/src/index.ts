@@ -68,10 +68,18 @@ function identityFromManifest(path: string, allowAnonymous: boolean): DeepSeekPl
   return { name: manifest.name, version: manifest.version }
 }
 
-/** Resolve a bare package without requiring it to export `./package.json`. */
+/** Honor anchored manifest resolvers, then inspect private manifests on the same package search path. */
 function barePackageManifest(packageName: string, anchors: readonly string[]): string | undefined {
   for (const anchor of anchors) {
-    const searchPaths = createRequire(anchor).resolve.paths(packageName)
+    const require = createRequire(anchor)
+    try {
+      return require.resolve(`${packageName}/package.json`)
+    } catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code
+      if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_MODULE_NOT_FOUND' && code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw cause
+      // A hidden or absent manifest export does not make an installed package anonymous.
+    }
+    const searchPaths = require.resolve.paths(packageName)
     /* v8 ignore next -- active non-builtin package entries always have Node package search paths */
     if (searchPaths === null) continue
     for (const searchPath of searchPaths) {

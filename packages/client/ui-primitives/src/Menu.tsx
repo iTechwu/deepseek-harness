@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
@@ -105,6 +105,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   className?: string | undefined
 }) {
   const rootRef = useRef<HTMLSpanElement>(null)
+  const anchorId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const [fixedPos, setFixedPos] = useState<CSSProperties | null>(null)
@@ -181,6 +182,8 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
         onClose()
         if (autoFocus) rootRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
       }
@@ -201,11 +204,11 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       if (document.activeElement instanceof HTMLIFrameElement) onClose()
     }
     document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('blur', onWindowBlur)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('blur', onWindowBlur)
     }
   }, [open, onClose, autoFocus])
@@ -291,6 +294,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
       role="menu"
+      data-dsh-portal-owner={portal ? anchorId : undefined}
       // React portals bubble synthetic events through the REACT tree: without
       // this stop, an item click re-fires the anchor row's own onClick
       // (open/toggle) after onSelect.
@@ -314,6 +318,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   return (
     <span
       ref={rootRef}
+      id={anchorId}
       className={clsx(css.root, className)}
       onPointerEnter={closeOnPointerLeave ? cancelClose : undefined}
       onPointerLeave={closeOnPointerLeave ? () => { if (open) armClose() } : undefined}

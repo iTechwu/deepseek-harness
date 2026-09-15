@@ -61,8 +61,11 @@ export function apply(ctx: Context, config: Config): void {
   // `composition` pins the entry's credential reference and endpoint: merged
   // settings snapshots keep advising every other field, but these two
   // connection facts always resolve from the composition values.
-  const ownedFacts = config.connectionPolicy === 'composition'
-    ? { apiKeyEnv: config.apiKeyEnv, baseURL: config.baseURL }
+  const ownedFacts: Config | undefined = config.connectionPolicy === 'composition'
+    ? {
+      ...config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv },
+      ...config.baseURL === undefined ? {} : { baseURL: config.baseURL },
+    }
     : undefined
   let current: () => Config = () => config
   let lastRaw: Config | undefined

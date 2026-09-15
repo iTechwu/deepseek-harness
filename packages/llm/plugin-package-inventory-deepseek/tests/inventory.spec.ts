@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { createRequire, registerHooks } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'

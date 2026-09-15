@@ -69,7 +69,7 @@ export function apply(ctx: Context, config: Config): void {
   let lastGood: ResolvedDeepSeekOptions | undefined
   const options = (): ResolvedDeepSeekOptions => {
     const merged = current()
-    const raw = ownedFacts === undefined ? merged : { ...merged, ...ownedFacts }
+    const raw: Config = ownedFacts === undefined ? merged : { ...merged, ...ownedFacts }
     if (raw === lastRaw && lastGood !== undefined) return lastGood
     try {
       const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx))

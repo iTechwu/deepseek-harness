@@ -51,10 +51,10 @@ function classifyPiAiError(message: string): string {
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
   // A stream truncated before the provider's terminal event: each pi-ai provider
   // throws its own wording when the wire closes mid-response without a terminal
-  // event (`… stream ended before message_stop`, `… before a terminal response
-  // event`, `… ended without a terminal event`, `Stream ended without
-  // finish_reason`). The connection dropped mid-response, so this is a transport
-  // truncation, not a model-level error.
+  // event (`… stream ended before message_stop`, `… stream closed before a
+  // terminal response`, `… ended without a terminal event`, `Stream ended
+  // without finish_reason`). The connection dropped mid-response, so this is
+  // a transport truncation, not a model-level error.
   if (/stream (?:ended|closed) (?:before|without)\b/i.test(message)) return 'TRANSPORT'
   if (/\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
     || /\b(?:other side closed|HTTP2 request did not get a response|WebSocket closed unexpectedly)\b/i.test(message)

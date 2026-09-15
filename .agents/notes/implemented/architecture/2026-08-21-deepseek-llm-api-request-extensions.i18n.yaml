@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-deepseek-llm-api-request-extensions.md
-2026-08-21-deepseek-llm-api-request-extensions.md: 55ca902014f9dea0787a572110fe2f58d0190ffd
-2026-08-21-deepseek-llm-api-request-extensions.zh.md: bba765fd98fbafa55cc6d47252091934a0441ed1
+2026-08-21-deepseek-llm-api-request-extensions.md: 14ab0a2b738711bab050085bb966c3df9e4b1c00
+2026-08-21-deepseek-llm-api-request-extensions.zh.md: c579a50a40a558ede62caa3ccbdfd09b93f7e10b

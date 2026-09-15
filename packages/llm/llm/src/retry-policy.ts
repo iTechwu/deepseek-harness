@@ -21,6 +21,7 @@ const DEFAULT_RETRYABLE_CODES = Object.freeze([
   'SERVER',
   'TIMEOUT',
   'TRANSPORT',
+  'STREAM_CLOSED',
 ])
 
 /** Bounded exponential backoff with symmetric jitter around each local delay. */

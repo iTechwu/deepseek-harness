@@ -23,7 +23,7 @@ const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModa
  * reasoning effort resolves to `high`.
  */
 export interface Config {
-  /** Wire protocol; defaults to messages. Configure through Cordis YAML. */
+  /** Wire protocol; `messages` means Anthropic Messages and is the default. */
   protocol?: DeepSeekProtocol
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
@@ -109,7 +109,7 @@ export const Config: z<Config> = z.object({
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
 export const PUBLIC_BASE_URL = 'https://api.deepseek.com'
 
-/** Official Messages protocol root. */
+/** Official Anthropic Messages protocol root. */
 export const MESSAGES_BASE_URL = 'https://api.deepseek.com/anthropic'
 
 /** Environment variable naming this provider's endpoint, honored only from trusted layers. */
@@ -212,7 +212,7 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   // Settings updates can reach this resolver without schema validation.
   const protocol: string = config.protocol ?? 'messages'
   if (protocol !== 'chat-completions' && protocol !== 'messages') {
-    throw new Error('llm-deepseek: protocol must be chat-completions or messages')
+    throw new Error('llm-deepseek: protocol must be chat-completions (OpenAI Chat Completions) or messages (Anthropic Messages)')
   }
   if (config.thinking === 'disabled'
     && config.reasoningEffort !== undefined

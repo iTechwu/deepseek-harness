@@ -30,6 +30,7 @@ The root slot composes the sidebar, main content, and right column. The sidebar 
 Global panels occupy the root-scoped `main` keyed slot; `conversation` is the reserved key for the Conversation. `ctx.layout.selectPanel(id)` selects a registered panel, and `null` selects the Conversation without changing the current Session. No global panel is registered by the shipped composition.
 
 AppFrame also isolates visible modal dialogs throughout its document, including Settings mounted in the sidebar and dialogs portaled to body. Tab stays within the active dialog and its owned menus; closing nested dialogs restores the previous trigger and background interaction. Custom dialogs must declare `role="dialog"` or `role="alertdialog"` with `aria-modal="true"`. The last visible dialog in DOM order is active; this is not a z-index resolver. See the [focus-isolation decision](../../../.agents/notes/implemented/bug-fix/2026-09-11-document-modal-focus-isolation.md).
+Windows Electron's `data-windows-titlebar` marker reserves the caption height above all columns and removes the collapsed sidebar rail. Only the content area's top-left corner has a 16px radius; the other corners and the internal divider remain square. The frame publishes `--dsh-windows-content-radius` and `--dsh-windows-sidebar-width` for ui-sidebar-right's fullscreen corner and sidebar clearance. Ordinary Web documents do not receive the marker; macOS retains its separate layout.
 
 ### Theme presentation
 

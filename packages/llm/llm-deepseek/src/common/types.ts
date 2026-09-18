@@ -50,6 +50,8 @@ export interface DeepSeekConnectionOptions {
   protocol: DeepSeekProtocol
   /** Root compatible with the selected protocol; custom paths remain unchanged. */
   baseURL: string
+  /** Deployment-owned request headers. */
+  headers: Readonly<Record<string, string>> | undefined
   /**
    * Credential reference of this same resolution, resolved per request.
    * Travelling with the endpoint is the point: a request can never pair one

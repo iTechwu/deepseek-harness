@@ -122,6 +122,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
       const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
         method: 'POST', signal, body: extensions.payload, redirect: 'error',
         headers: {
+          ...connection.headers,
           ...attributionHeaders(),
           'content-type': 'application/json', 'accept': 'text/event-stream',
           'x-api-key': key, 'anthropic-version': '2023-06-01',

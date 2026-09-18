@@ -30,6 +30,7 @@ kind: "package-reference"
 全局面板占据 root 作用域的 `main` keyed slot；`conversation` 是为会话界面保留的 key。`ctx.layout.selectPanel(id)` 选中已注册面板，`null` 则选中会话界面，但不改变当前会话。默认组合不注册任何全局面板。
 
 AppFrame 还会隔离 document 中可见的模态对话框，包括挂载在侧边栏的设置页和通过 portal 挂载到 body 的弹窗。Tab 留在当前对话框及其所属菜单内；关闭嵌套弹窗后恢复上层触发控件的焦点与背景交互。自定义弹窗必须声明 `role="dialog"` 或 `role="alertdialog"`，并设置 `aria-modal="true"`。DOM 顺序中最后一个可见弹窗获得控制权；这里不解析 z-index。参见[焦点隔离决策](../../../.agents/notes/implemented/bug-fix/2026-09-11-document-modal-focus-isolation.zh.md)。
+Windows Electron 的 `data-windows-titlebar` 标记在所有列上方预留顶栏高度，并移除收起后的侧栏轨道。内容区仅左上角保留 16px 圆角，其余角和内部交界处保持直角。框架发布 `--dsh-windows-content-radius` 和 `--dsh-windows-sidebar-width`，供 ui-sidebar-right 的全屏圆角及侧栏避让使用。普通 Web 文档不会获得该标记；macOS 保留其独立布局。
 
 ### 主题呈现
 

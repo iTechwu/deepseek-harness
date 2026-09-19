@@ -6,7 +6,7 @@ import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { DeepSeekLlmApiExtensionRequest, PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { DeepSeekFileStore, DeepSeekFilePolicy } from './file-store.ts'
 
-/** Supported wire implementations; Responses is not yet implemented. */
+/** Supported wire implementations: OpenAI Chat Completions and Anthropic Messages. Responses is not implemented. */
 export type DeepSeekProtocol = 'chat-completions' | 'messages'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
@@ -50,6 +50,8 @@ export interface DeepSeekConnectionOptions {
   protocol: DeepSeekProtocol
   /** Root compatible with the selected protocol; custom paths remain unchanged. */
   baseURL: string
+  /** Deployment-owned request headers. */
+  headers: Readonly<Record<string, string>> | undefined
   /**
    * Credential reference of this same resolution, resolved per request.
    * Travelling with the endpoint is the point: a request can never pair one

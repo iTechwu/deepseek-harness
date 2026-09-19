@@ -49,7 +49,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 
 | Field | Default | Meaning |
 |---|---|---|
-| `protocol` | `messages` | Choose `messages` or `chat-completions` in Cordis YAML; Web has no protocol selector |
+| `protocol` | `messages` | Choose `messages` (Anthropic Messages) or `chat-completions` (OpenAI Chat Completions) in Cordis YAML; Web has no protocol selector |
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference resolved per request through the credentials seam, then the environment |
 | `baseURL` | Selected protocol’s official root | Explicit value, then `$DEEPSEEK_BASE_URL`, then the selected protocol default |
 | `thinking` | `enabled` | Deployment policy; `disabled` locks every request to `off` |
@@ -73,9 +73,9 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-deepseek) is the exhaustive source for every accepted field and its JSDoc.
 
 <a id="choose-a-protocol"></a>
-### Choose a protocol
+### Choose OpenAI Chat Completions or Anthropic Messages
 
-To select Chat Completions explicitly, patch the existing plugin:
+The adapter explicitly supports OpenAI Chat Completions and Anthropic Messages. The stable configuration values remain `chat-completions` and `messages`; OpenAI Responses is a separate protocol and is not implemented. To select OpenAI Chat Completions explicitly, patch the existing plugin:
 
 ```yaml
 - id: llm-deepseek
@@ -83,7 +83,15 @@ To select Chat Completions explicitly, patch the existing plugin:
     protocol: chat-completions
 ```
 
-`protocol` defaults to `messages`, with official root `https://api.deepseek.com/anthropic`; `chat-completions` uses `https://api.deepseek.com`. Shipped first-party compositions inherit this default. Neither protocol requires `baseURL`: its official default applies when both `baseURL` and `$DEEPSEEK_BASE_URL` are absent. Switching protocols retains endpoint overrides, so users must supply an address compatible with the selected protocol. An explicit `https://api.deepseek.com` override selects the Chat root: remove that override to use the official Messages default, or set it to `https://api.deepseek.com/anthropic`. Chat appends `/chat/completions`. Messages and its Files API treat only an exact final `/v1` path segment as the existing Anthropic API version and append `/messages` or `/files`; every other base receives `/v1/messages` or `/v1/files`. The official Messages root therefore retains its recommended `/anthropic/v1` request paths without granting compatibility to arbitrary version-like suffixes. Trailing slashes do not change these results. Both protocols share the `llm-deepseek` settings section, `apiKeyEnv`, and `deepseek-official`, so saved model selections remain valid.
+To select Anthropic Messages explicitly:
+
+```yaml
+- id: llm-deepseek
+  config:
+    protocol: messages
+```
+
+`protocol` defaults to `messages`, which explicitly selects Anthropic Messages, with official root `https://api.deepseek.com/anthropic`; `chat-completions` uses `https://api.deepseek.com`. Shipped first-party compositions inherit this default. Neither protocol requires `baseURL`: its official default applies when both `baseURL` and `$DEEPSEEK_BASE_URL` are absent. Switching protocols retains endpoint overrides, so users must supply an address compatible with the selected protocol. An explicit `https://api.deepseek.com` override selects the Chat root: remove that override to use the official Messages default, or set it to `https://api.deepseek.com/anthropic`. Chat appends `/chat/completions`. Messages and its Files API treat only an exact final `/v1` path segment as the existing Anthropic API version and append `/messages` or `/files`; every other base receives `/v1/messages` or `/v1/files`. The official Messages root therefore retains its recommended `/anthropic/v1` request paths without granting compatibility to arbitrary version-like suffixes. Trailing slashes do not change these results. Both protocols share the `llm-deepseek` settings section, `apiKeyEnv`, and `deepseek-official`, so saved model selections remain valid.
 
 Messages sends text, thinking, tool calls, and tool results as content blocks, reasoning effort as `output_config.effort`, and images as Files references or inline base64. Models declaring `systemPromptUpdate: in-history` retain the initial top-level system and send new system snapshots after their corresponding user/tool-result turn; undeclared models use the latest snapshot as the top-level system. Replay metadata identifies the Messages format, model, and signatures. Chat requests serialize durable content without those signatures. Invalid Messages replay metadata emits a warning and omits signatures while retaining text and tool history.
 
@@ -137,7 +145,7 @@ The plugin is built on one explicit resolve step and one registration fact. `res
 | [`src/common/file-store.ts`](src/common/file-store.ts) | Shared Files cache, refresh, quota cleanup, and cancellation |
 | [`src/common/files-api.ts`](src/common/files-api.ts) | Protocol-specific Files endpoints and response mapping |
 | [`src/protocols/chat-completions/adapter.ts`](src/protocols/chat-completions/adapter.ts) | Chat transport, image projection, and request extensions |
-| [`src/protocols/messages/adapter.ts`](src/protocols/messages/adapter.ts) | Messages transport, image projection, request extensions, and native replay |
+| [`src/protocols/messages/adapter.ts`](src/protocols/messages/adapter.ts) | Anthropic Messages transport, image projection, request extensions, and native replay |
 
 ### Wire flow
 

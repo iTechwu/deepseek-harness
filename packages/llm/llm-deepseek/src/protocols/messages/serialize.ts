@@ -47,7 +47,7 @@ function assistant(message: Message, model: string, onReplayDegrade?: (reason: s
  * @param access - execution-world paths for image descriptions.
  * @param onReplayDegrade - diagnostic for discarded native replay metadata.
  * @param fileIds - resolved Files references; omission selects inline image bytes.
- * @returns the Messages API JSON body.
+ * @returns the Anthropic Messages API JSON body.
  */
 export function serialize(
   options: GenerateOptions, connection: Connection, history: readonly Message[],

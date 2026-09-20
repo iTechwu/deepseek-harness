@@ -182,6 +182,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     () => layout === 'pi-ai' ? protocolChoices(namespace, schema) : [],
     [layout, namespace, schema],
   )
+  const deepSeekProtocols = ['chat-completions', 'messages'] as const
 
   useEffect(() => {
     let stale = false
@@ -425,6 +426,22 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               />
               {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{t('deepSeekEndpointHint')}</span> : null}
             </div>
+            {family === 'deepseek'
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={stringAt(draft, 'protocol') ?? stringAt(fallback, 'protocol') ?? deepSeekProtocols[0]}
+                    aria-label={t('customApi')}
+                    disabled={disabled}
+                    onChange={(event) => { setField('protocol', event.target.value) }}
+                  >
+                    {deepSeekProtocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                  </select>
+                </div>
+              )
+              : null}
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
             {ownsIdentity

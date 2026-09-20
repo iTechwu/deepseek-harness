@@ -187,6 +187,13 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['--help'] })
   })
 
+  it('allows the Electron host to manage its profile through the scoped plugin boundary', () => {
+    vi.stubEnv('DSH_DESKTOP_PLUGIN_OPERATION', '1')
+    expect(parse(['plugin', '--profile', 'desktop', 'add', 'example@1.2.3']))
+      .toEqual({ mode: 'plugin', profile: 'desktop', args: ['add', 'example@1.2.3'] })
+    expect(exitCode(['--profile', 'desktop'])).toBe(1)
+  })
+
   it('keeps its own help for an invocation with no app to hand it to', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     expect(exitCode(['--help'])).toBe(0)

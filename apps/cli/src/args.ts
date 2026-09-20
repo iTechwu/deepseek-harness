@@ -70,8 +70,8 @@ function selectProfile(value: string, previous?: string): string {
   return value
 }
 
-function rejectElectronProfile(program: Command, profile: string): void {
-  if (profile.toLowerCase() === 'desktop') {
+function rejectElectronProfile(program: Command, profile: string, managedPluginOperation = false): void {
+  if (profile.toLowerCase() === 'desktop' && !managedPluginOperation) {
     program.error('error: profile "desktop" is managed exclusively by the Electron application')
   }
 }
@@ -181,7 +181,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
         // rejects the Electron-managed profile.
         if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')
           && options.profile.toLowerCase() === 'desktop') plugin.help()
-        rejectElectronProfile(plugin, options.profile)
+        rejectElectronProfile(plugin, options.profile, process.env.DSH_DESKTOP_PLUGIN_OPERATION === '1')
         if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
         resolved = { mode: 'plugin', profile: options.profile, args }
       })

@@ -691,7 +691,7 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.customized))
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder)
       .toBe('https://api.deepseek.com/anthropic')
-    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('messages')
     expect(screen.getByText(en.deepSeekEndpointHint)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-messages-test' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://messages.example/anthropic' } })

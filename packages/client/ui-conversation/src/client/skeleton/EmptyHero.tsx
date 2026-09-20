@@ -131,6 +131,10 @@ function HeroFish({ hovering }: { hovering: boolean }) {
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   const [hovering, setHovering] = useState(false)
+  const desktopMission = (globalThis as typeof globalThis & { __DSH_DESKTOP_BRAND_MISSION__?: unknown }).__DSH_DESKTOP_BRAND_MISSION__
+  const headline = typeof desktopMission === 'string' && desktopMission.trim().length > 0
+    ? desktopMission
+    : t('hero.headline')
   return (
     <div className={css.root}>
       <div className={css.stack}>
@@ -151,7 +155,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           </span>
           <span className={css.titleGroup}>
             {/* Own element: keeps the headline text addressable apart from the badge. */}
-            <span>{t('hero.headline')}</span>
+            <span>{headline}</span>
             <span className={css.previewBadge}>{t('hero.preview')}</span>
           </span>
         </div>

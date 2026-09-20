@@ -370,6 +370,10 @@ function mount(
 }
 
 describe('Hero chrome', () => {
+  afterEach(() => {
+    delete (globalThis as typeof globalThis & { __DSH_DESKTOP_BRAND_MISSION__?: unknown }).__DSH_DESKTOP_BRAND_MISSION__
+  })
+
   it('renders the English preview badge through the hero locale seat', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
@@ -384,6 +388,15 @@ describe('Hero chrome', () => {
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+  })
+
+  it('uses the Desktop injected mission for the new-session headline', () => {
+    ;(globalThis as typeof globalThis & { __DSH_DESKTOP_BRAND_MISSION__?: string }).__DSH_DESKTOP_BRAND_MISSION__ = '成就中国智造的全球竞争力'
+    const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+    const view = render(<HeroShell t={makeTranslate(zh, commonZh)} renderSlot={renderSlot} />)
+
+    expect(view.getByText('成就中国智造的全球竞争力')).toBeTruthy()
+    expect(view.queryByText('青年人买车就到优惠豚')).toBeNull()
   })
 })
 
@@ -525,7 +538,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByRole('tablist')).toBeNull()
     expect(b.slotCalls).not.toContain('conversation.session.header.utilities')
     expect(b.slotCalls).not.toContain('conversation.session.header.actions')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
+    expect(b.view.getByText('青年人买车就到优惠豚')).toBeTruthy()
     expect(b.view.getByText('预览版')).toBeTruthy()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
@@ -591,7 +604,7 @@ describe('ConversationRoot resident composer', () => {
     // blank the column for the history round-trip.
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('hero')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
+    expect(b.view.getByText('青年人买车就到优惠豚')).toBeTruthy()
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 

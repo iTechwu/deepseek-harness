@@ -86,6 +86,9 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => controller.inject(configLedger),
     children: {
+      'plugins.header.leading': { kind: 'single', scope: 'root' },
+      'plugins.overview': { kind: 'list', scope: 'root' },
+      'plugins.bundle.hidden': { kind: 'keyed', scope: 'root' },
       'plugins.item': { kind: 'list', scope: 'root' },
       'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
       'plugins.row.config': { kind: 'keyed', scope: 'root' },

@@ -11,7 +11,7 @@ import { BROWSER_ID, browserDefinition } from './definition.tsx'
 import { en, zh } from './locales.ts'
 import { createBrowserStore } from './browser/store.ts'
 
-export type { BrowserBodyProps } from './view/BrowserBody.tsx'
+export type { BrowserBodyProps, SidebarBrowserCarrier, SidebarBrowserNativeSurface } from './view/BrowserBody.tsx'
 export type { BrowserInjected } from './browser/BrowserController.ts'
 export type { BrowserDocument, BrowserFrame, BrowserFrameState } from './browser/BrowserFrame.ts'
 export type { BrowserFailure, BrowserHistoryEntry, BrowserNavigationStatus, BrowserTabState } from './browser/BrowserNavigation.ts'
@@ -38,6 +38,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.sidebarRightTabs.register(browserDefinition(t)), 'ui-sidebar-browser.type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: BROWSER_ID, locale: namespace, store,
+    children: { 'sidebar.browser.carrier': { kind: 'single', scope: 'session' } },
     inject: (_sessionId, actions) => createBrowserControllers(actions),
   }, BrowserBody)), 'ui-sidebar-browser.body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({

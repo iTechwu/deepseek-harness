@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { useSyncExternalStore } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { createBrowserControllers } from '../src/client/browser/BrowserController.ts'
@@ -57,6 +57,7 @@ function mountBrowser(navigation?: { readonly url?: string }) {
     t: (key: keyof typeof zh, params?: Record<string, unknown>) => params === undefined
       ? zh[key] : zh[key].replace('{message}', String(params.message)),
     ...commands,
+    renderSlot: (_key: unknown, _owner: unknown, opts?: { fallback?: ReactNode }) => opts?.fallback ?? null,
     useBrowserFrame: (key: string) => {
       const frame = keyedHooks.browserFrame(key) ?? absentFrame
       return useSyncExternalStore(frame.subscribe, frame.getSnapshot)
@@ -226,6 +227,59 @@ describe('BrowserBody', () => {
     await waitFor(() => { expect(remounted.container.querySelector('iframe')?.getAttribute('src')).toBe('https://latest.example/path') })
     expect(remounted.getByRole('textbox')).toHaveProperty('value', 'https://latest.example/path')
     expect(mounted.store.getSnapshot().byTab[TAB]?.entries.at(-1)?.url).toBe('https://latest.example/path')
+  })
+
+  it('dispatches sidebar.browser.carrier and renders the native surface in place of the iframe', () => {
+    const seen: { readonly key: unknown; readonly owner: unknown }[] = []
+    let nativeNode: ReactNode = null
+    const store = createBrowserStore().create(`browser-body-native-${String(++mountSequence)}`)
+    const lifetime = new AbortController()
+    lifetimes.add(lifetime)
+    const injected = createBrowserControllers(store.actions)
+    const { keyedHooks, ...commands } = injected
+    const props = {
+      sessionId: SESSION,
+      useSessions: vi.fn(),
+      useResource: vi.fn(),
+      useWorkspaces: vi.fn(),
+      usePanelInfo: vi.fn(),
+      useSessionPendingInteraction: vi.fn(),
+      useTabInfo: () => ({
+        sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' },
+        tab: {
+          id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/native', visible: true,
+          navigation: { address: 'sidebar://browser/native', params: undefined, revision: 0 },
+          signal: lifetime.signal,
+          actions: { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() },
+        },
+      }),
+      useStore: hookOf(store),
+      actions: store.actions,
+      t: (key: keyof typeof zh, params?: Record<string, unknown>) => params === undefined
+        ? zh[key] : zh[key].replace('{message}', String(params.message)),
+      ...commands,
+      renderSlot: (key: unknown, owner: { bodyProps: Record<string, unknown>; Body: (props: Record<string, unknown>) => ReactNode }) => {
+        seen.push({ key, owner })
+        return owner.Body({ ...owner.bodyProps, native: {
+          url: 'https://native.example/path', error: null, canGoBack: false, canGoForward: true,
+          navigate: () => {}, back: () => {}, forward: () => {}, reload: () => {},
+          content: nativeNode = <div data-testid="native-surface">native</div>,
+        } })
+      },
+      useBrowserFrame: (key: string) => {
+        const frame = keyedHooks.browserFrame(key) ?? absentFrame
+        return useSyncExternalStore(frame.subscribe, frame.getSnapshot)
+      },
+    } as unknown as BrowserBodyProps
+    const view = render(<BrowserBody {...props} />)
+    expect(new Set(seen.map(entry => entry.key))).toEqual(new Set(['sidebar.browser.carrier']))
+    expect(view.queryByRole('textbox')).not.toBeNull()
+    expect(view.container.querySelector('iframe')).toBeNull()
+    expect(view.container.querySelector('[data-testid="native-surface"]')).not.toBeNull()
+    expect(nativeNode).not.toBeNull()
+    expect(view.queryByTitle(zh['sandbox.disable'])).toBeNull()
+    expect(view.getByRole('button', { name: zh.forward }).hasAttribute('disabled')).toBe(false)
+    expect(view.getByRole('button', { name: zh.back }).hasAttribute('disabled')).toBe(true)
   })
 
 })

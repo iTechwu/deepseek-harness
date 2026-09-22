@@ -77,6 +77,27 @@ describe('a-priori root and declaration gate', () => {
       Comp as never,
     )).toThrow(/already declared.*test\.single/)
   })
+
+  it('rejects an erased non-component entry, naming the slot and the likely cause', () => {
+    const core = new SlotCore()
+    expect(() => core.register({ name: 'test.single' }, undefined as never))
+      .toThrow(/test\.single.*undefined.*import/)
+  })
+
+  it('rejects null and plain-object entries', () => {
+    const core = new SlotCore()
+    expect(() => core.register({ name: 'test.single' }, null as never)).toThrow(TypeError)
+    expect(() => core.register({ name: 'test.single' }, {} as never)).toThrow(TypeError)
+  })
+
+  it('accepts React element-type components (forwardRef/memo objects)', () => {
+    const core = new SlotCore()
+    mountFrame(core)
+    expect(() => core.register(
+      { name: 'test.single' },
+      { $$typeof: Symbol.for('react.forward_ref') } as never,
+    )).not.toThrow()
+  })
 })
 
 describe('lifecycle cascade (one axis)', () => {

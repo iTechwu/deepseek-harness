@@ -1201,6 +1201,15 @@ export class SlotCore {
   ): () => void
   /* jscpd:ignore-end */
   register(options: ErasedOptions, component: unknown): () => void {
+    // Erased callers can hand over a missing import that silently resolved to
+    // undefined; reject it here so boot names the slot instead of React #130
+    // surfacing at render time behind a slot error boundary.
+    if (typeof component !== 'function'
+      && !(component !== null && typeof component === 'object' && '$$typeof' in component)) {
+      throw new TypeError(
+        `slot "${options.name}" entry component must be a component function or React element type, `
+        + `got ${component === undefined ? 'undefined (a renamed or deleted import resolves to undefined)' : typeof component}`)
+    }
     const rec = this.records.get(options.name)
     if (!rec?.spec) {
       throw new Error(`slot "${options.name}" is not declared (a parent entry's children table must declare it)`)

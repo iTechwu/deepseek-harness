@@ -85,8 +85,8 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts: { only?: string; entryKey?: string }) =>
-      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view) ?? null,
+    renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts?: { only?: string; entryKey?: string }) =>
+      bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]?.(owner.view) ?? null,
   } as unknown as PluginManagerPageProps
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {

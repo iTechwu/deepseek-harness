@@ -52,7 +52,7 @@ describe('configLedgerSource', () => {
   it('projects the official items in ledger order with locale-following labels, and the bundle and row keys', () => {
     const b = bench()
     const source = configLedgerSource(b.ctx)
-    expect(source.getSnapshot()).toEqual({ items: [], bundles: new Set(), rows: new Set() })
+    expect(source.getSnapshot()).toEqual({ items: [], hiddenBundles: new Set(), bundles: new Set(), rows: new Set() })
 
     let title = 'Shell'
     b.register('plugins.item', { id: 'bash', label: () => title })
@@ -62,6 +62,7 @@ describe('configLedgerSource', () => {
 
     expect(source.getSnapshot()).toEqual({
       items: [{ id: 'bash', label: 'Shell' }, { id: 'loop', label: 'Agent loop' }],
+      hiddenBundles: new Set(),
       bundles: new Set(['dsh-x']),
       rows: new Set(['dsh-x#row']),
     })
@@ -78,7 +79,7 @@ describe('configLedgerSource', () => {
     b.register('plugins.item', { id: 'bare' })
     b.register('plugins.bundle.config', {})
 
-    expect(source.getSnapshot()).toEqual({ items: [{ id: 'bare', label: '' }], bundles: new Set(), rows: new Set() })
+    expect(source.getSnapshot()).toEqual({ items: [{ id: 'bare', label: '' }], hiddenBundles: new Set(), bundles: new Set(), rows: new Set() })
   })
 
   it('keeps its snapshot until a ledger or the locale moves, and follows every source while subscribed', () => {

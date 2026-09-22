@@ -21,6 +21,15 @@ export interface PluginConfigViewProps {
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
+     * Native sidebar control, separate from the scrolling page header: the
+     * page renders it at the top of the panel on darwin desktop shells.
+     */
+    'plugins.header.leading': { kind: 'single'; scope: 'root' }
+    /** Controls above the ordinary plugin cards, rendered once the page has loaded. */
+    'plugins.overview': { kind: 'list'; scope: 'root' }
+    /** Bundle names managed by overview controls instead of ordinary cards, keyed by package name. */
+    'plugins.bundle.hidden': { kind: 'keyed'; scope: 'root' }
+    /**
      * One official plugin the Plugins page lists in its Official group after
      * the official bundles: `label` is the card's title and `order` its place.
      * The page renders the entry as the card's one-liner (`view: 'summary'`)

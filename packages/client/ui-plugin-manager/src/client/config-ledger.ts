@@ -23,6 +23,8 @@ export interface OfficialItem {
  */
 export interface ConfigLedger {
   readonly items: readonly OfficialItem[]
+  /** Bundle names an overview control manages instead of ordinary cards. */
+  readonly hiddenBundles?: ReadonlySet<string>
   readonly bundles: ReadonlySet<string>
   readonly rows: ReadonlySet<string>
 }
@@ -37,7 +39,7 @@ export function rowConfigKey(bundle: string, rowId: string): string {
   return `${bundle}#${rowId}`
 }
 
-const SLOTS = ['plugins.item', 'plugins.bundle.config', 'plugins.row.config'] as const
+const SLOTS = ['plugins.item', 'plugins.bundle.hidden', 'plugins.bundle.config', 'plugins.row.config'] as const
 
 /**
  * Project the configuration ledgers as one observable the page binds.
@@ -47,8 +49,8 @@ const SLOTS = ['plugins.item', 'plugins.bundle.config', 'plugins.row.config'] as
 export function configLedgerSource(ctx: ClientContext): HostObservable<ConfigLedger> {
   let versions: readonly number[] = []
   let revision = -1
-  let ledger: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
-  const keysOf = (name: 'plugins.bundle.config' | 'plugins.row.config'): ReadonlySet<string> =>
+  let ledger: ConfigLedger = { items: [], hiddenBundles: new Set(), bundles: new Set(), rows: new Set() }
+  const keysOf = (name: 'plugins.bundle.hidden' | 'plugins.bundle.config' | 'plugins.row.config'): ReadonlySet<string> =>
     new Set(ctx.slots.entries(name).flatMap(entry => entry.options.key === undefined ? [] : [entry.options.key]))
   return {
     getSnapshot: () => {
@@ -63,6 +65,7 @@ export function configLedgerSource(ctx: ClientContext): HostObservable<ConfigLed
             id: entry.options.id ?? '',
             label: resolveSlotLabel(entry.options.label) ?? '',
           })),
+          hiddenBundles: keysOf('plugins.bundle.hidden'),
           bundles: keysOf('plugins.bundle.config'),
           rows: keysOf('plugins.row.config'),
         }

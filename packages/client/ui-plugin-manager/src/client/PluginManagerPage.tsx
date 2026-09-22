@@ -14,7 +14,7 @@ import type { PluginInstallFailureKind } from '@deepseek-ai/dsh-api-remotes/clie
 import {
   Button, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconCordisPluginOutline14, IconPluginPinwheelOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16,
-  IconWarningOutline16, Input, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
+  IconWarningOutline16, Input, isDarwinDesktop, Modal, StateDot, Switch, Tag, TerminalBlock, Toast,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,7 +33,7 @@ import css from './PluginManagerPage.module.css'
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
+  & PropsRenderSlots<'plugins.header.leading' | 'plugins.overview' | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -269,6 +269,12 @@ function CardHead({ title, t, onOpen, tags, description, end }: {
   )
 }
 
+/** Sidebar control in native window chrome, independent of the scrolling page header. */
+function PluginSidebarControl({ renderSlot }: { renderSlot: RenderConfig }): ReactNode {
+  if (!isDarwinDesktop()) return null
+  return <div data-plugin-sidebar-control>{renderSlot('plugins.header.leading', {})}</div>
+}
+
 /** The top every page shares: the crumb that leads back, then the icon with the page's actions at its right. */
 function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
   readonly crumbLabel: string
@@ -279,7 +285,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
 }): ReactNode {
   return (
     <>
-      <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
+      <button type="button" data-plugin-page-header="detail" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
         <IconChevronDownOutline14 className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
       </button>
@@ -859,6 +865,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
   // Plugins section's Plugin list tab.
   const listed = state.packages.filter(pkg => !BUILTIN_PROFILE_BUNDLES.has(pkg.name)
+    && !ledger.hiddenBundles?.has(pkg.name)
     && (pkg.installed || pkg.optional || pkg.error !== undefined))
   const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
   const official = listed.filter(pkg => pkg.optional && !pkg.installed)
@@ -908,9 +915,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
 
   return (
     <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
+      <PluginSidebarControl renderSlot={renderSlot} />
       {showsCards
         ? (
-          <header className={css.pageHead}>
+          <header className={css.pageHead} data-plugin-page-header="list">
             <div>
               <h1 className={css.pageTitle}>{t('title')}</h1>
               <p className={css.pageIntro}>{t('intro')}</p>
@@ -924,6 +932,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           </header>
         )
         : null}
+      {showsCards && loaded ? renderSlot('plugins.overview', {}) : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
       {state.status === 'error'

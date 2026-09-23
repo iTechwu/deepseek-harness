@@ -353,12 +353,12 @@ export function applyCiRunTool(ctx: Context, config: ResolvedConfig): void {
         let run: ShellRunResult | undefined
         let spawnError: string | undefined
         try {
-          run = await ctx.shell.run(ctx.shell.resolve({
+          run = await (await ctx.shell.execute(ctx.shell.resolve({
             command,
             workdir: resolved.cwd,
             timeoutMs: resolved.timeoutMs,
             signal: exec.signal,
-          }))
+          }))).result()
         } catch (error) {
           spawnError = error instanceof Error ? error.message : String(error)
         }

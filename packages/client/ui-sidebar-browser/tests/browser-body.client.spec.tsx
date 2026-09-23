@@ -1,19 +1,26 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { useSyncExternalStore, type ReactNode } from 'react'
+import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { createBrowserControllers } from '../src/client/browser/BrowserController.ts'
-import type { BrowserFrameState } from '../src/client/browser/BrowserFrame.ts'
+import type { PaneId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { createBrowserControllers, type BrowserControllerState, type BrowserInjected } from '../src/client/browser/BrowserController.ts'
 import { createBrowserStore } from '../src/client/browser/store.ts'
 import type { BrowserBodyProps } from '../src/client/view/BrowserBody.tsx'
-import { BrowserBody, WEB_BROWSER_SANDBOX } from '../src/client/view/BrowserBody.tsx'
+import { BrowserBody } from '../src/client/view/BrowserBody.tsx'
+import { WEB_BROWSER_SANDBOX } from '../src/client/view/IframePresentation.ts'
+import { createIframePage } from '../src/client/pages.ts'
 import { zh } from '../src/client/locales.ts'
+import { browserAddressCheckpoint, type BrowserTabState } from '../src/client/browser/BrowserPersistence.ts'
+import type { BrowserPageFactory, BrowserPageOptions } from '../src/client/browser/BrowserPage.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { emptyBrowserFrame, type BrowserFrameState } from '../src/client/browser/BrowserFrame.ts'
 
 const SESSION = 'session' as SessionId
 const TAB = 'tab' as TabId
+const messages: Readonly<Record<string, string>> = zh
 const lifetimes = new Set<AbortController>()
+const controllers: BrowserInjected[] = []
 let mountSequence = 0
 
 function hookOf<T>(store: { subscribe(listener: () => void): () => void; getSnapshot(): T }) {
@@ -25,52 +32,54 @@ function hookOf<T>(store: { subscribe(listener: () => void): () => void; getSnap
   }
 }
 
-const absentFrame = {
+const absentState = {
   subscribe: (_listener: () => void): (() => void) => () => {},
-  getSnapshot: (): BrowserFrameState | undefined => undefined,
+  getSnapshot: (): BrowserControllerState | undefined => undefined,
 }
 
-function mountBrowser(navigation?: { readonly url?: string }) {
+function mountBrowser(navigation?: { readonly url?: string },
+  options: { initial?: BrowserTabState; createPage?: BrowserPageFactory } = {}) {
   const store = createBrowserStore().create(`browser-body-test-${String(++mountSequence)}`)
+  if (options.initial !== undefined) store.actions.replace(TAB, options.initial)
   const lifetime = new AbortController()
   lifetimes.add(lifetime)
-  const injected = createBrowserControllers(store.actions)
+  const injected = createBrowserControllers(store.actions, options.createPage ?? createIframePage, () => true)
+  controllers.push(injected)
   const { keyedHooks, ...commands } = injected
-  const props = {
-    sessionId: SESSION,
-    useSessions: vi.fn(),
-    useResource: vi.fn(),
-    useWorkspaces: vi.fn(),
-    usePanelInfo: vi.fn(),
-    useSessionPendingInteraction: vi.fn(),
-    useTabInfo: () => ({
-      sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' },
-      tab: {
-        id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/1', visible: true,
-        navigation: { address: 'sidebar://browser/1', params: navigation, revision: 0 },
-        signal: lifetime.signal,
-        actions: { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() },
+  const tabActions = { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() }
+  const props: Pick<BrowserBodyProps, 'sessionId' | 'useTabInfo' | 'useStore' | 'actions' | 't' | 'useBrowserState'>
+    & Omit<BrowserInjected, 'keyedHooks'> = {
+      sessionId: SESSION,
+      useTabInfo: () => ({
+        sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' as PaneId },
+        tab: {
+          id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/1', visible: true,
+          navigation: { address: 'sidebar://browser/1', params: navigation, revision: 0 },
+          signal: lifetime.signal,
+          actions: tabActions,
+        },
+      }),
+      useStore: hookOf(store),
+      actions: store.actions,
+      t: (key, params) => {
+        const template = messages[key] ?? key
+        return params === undefined ? template : template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name]))
       },
-    }),
-    useStore: hookOf(store),
-    actions: store.actions,
-    t: (key: keyof typeof zh, params?: Record<string, unknown>) => params === undefined
-      ? zh[key] : zh[key].replace('{message}', String(params.message)),
-    ...commands,
-    renderSlot: (_key: unknown, _owner: unknown, opts?: { fallback?: ReactNode }) => opts?.fallback ?? null,
-    useBrowserFrame: (key: string) => {
-      const frame = keyedHooks.browserFrame(key) ?? absentFrame
-      return useSyncExternalStore(frame.subscribe, frame.getSnapshot)
-    },
-  } as unknown as BrowserBodyProps
-  const renderBody = () => render(<BrowserBody {...props} />)
+      ...commands,
+      useBrowserState: (key: string) => {
+        const state = keyedHooks.browserState(key) ?? absentState
+        return useSyncExternalStore(state.subscribe, state.getSnapshot)
+      },
+    }
+  const renderBody = () => render(<BrowserBody {...props as BrowserBodyProps} />)
   return {
-    view: renderBody(), remount: renderBody, store, lifetime, injected,
+    view: renderBody(), remount: renderBody, store, lifetime, injected, tabActions,
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
+  await Promise.all(controllers.splice(0).map(controller => controller.dispose()))
   for (const lifetime of lifetimes) lifetime.abort()
   lifetimes.clear()
   localStorage.clear()
@@ -78,6 +87,39 @@ afterEach(() => {
 })
 
 describe('BrowserBody', () => {
+  it('shows the saved title and URL without loading until Restore is clicked', async () => {
+    const target = { kind: 'https' as const, url: 'https://saved.example/page', title: 'Saved title' }
+    const mounted = mountBrowser(undefined, { initial: browserAddressCheckpoint(target, 1) })
+    expect(mounted.view.getByText(target.title)).toBeDefined()
+    expect(mounted.view.getByText(target.url)).toBeDefined()
+    expect(mounted.view.container.querySelector('iframe')).toBeNull()
+    expect(mounted.view.getByRole('button', { name: zh.reload })).toHaveProperty('disabled', false)
+    fireEvent.click(mounted.view.getByRole('button', { name: zh['restore.action'] }))
+    await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.src).toBe(target.url) })
+    expect(mounted.view.queryByText(target.title)).toBeNull()
+  })
+
+  it('renders native error details and routes provider open requests through the source tab', () => {
+    const state = createSnapshotStore<BrowserFrameState>({ ...emptyBrowserFrame(), error: { code: -105, description: 'DNS failure' } })
+    const providers: BrowserPageOptions[] = []
+    const mounted = mountBrowser(undefined, { createPage: (options) => {
+      providers.push(options)
+      return {
+        presentation: { mount: () => () => {} },
+        frame: { getSnapshot: () => state.getSnapshot(), subscribe: listener => state.subscribe(listener),
+          loadUrl: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn(), dispose: async () => {} },
+      }
+    } })
+    expect(mounted.view.getByRole('status').textContent).toContain('DNS failure')
+    expect(mounted.view.getByRole('status').textContent).toContain('-105')
+    act(() => { state.set({ ...state.getSnapshot(), error: { code: -105, description: undefined } }) })
+    expect(mounted.view.getByRole('status').textContent).toBe(zh['load.failed'])
+    act(() => { providers[0]!.openRequested('https://new.example/') })
+    expect(mounted.tabActions.openTab).toHaveBeenCalledExactlyOnceWith('browser', {
+      params: { url: 'https://new.example/' }, revealIfOpened: false,
+    })
+  })
+
   it('routes address input to the controller and renders parser failures', async () => {
     const mounted = mountBrowser()
     const input = mounted.view.getByRole('textbox')
@@ -102,7 +144,8 @@ describe('BrowserBody', () => {
     expect(frame.getAttribute('src')).toBe('https://example.com/one')
     expect(frame.getAttribute('sandbox')).toBe(WEB_BROWSER_SANDBOX)
     expect(frame.getAttribute('allow')).toBeNull()
-    expect(frame.getAttribute('referrerpolicy')).toBe('no-referrer')
+    // jsdom does not reflect the iframe referrerPolicy property to its attribute.
+    expect(frame.referrerPolicy).toBe('no-referrer')
     const disableSandbox = mounted.view.getByRole('button', { name: zh['sandbox.disable'] })
     const protectedMark = disableSandbox.querySelector('svg path:last-child')?.getAttribute('d')
     fireEvent.click(disableSandbox)
@@ -170,15 +213,15 @@ describe('BrowserBody', () => {
     fireEvent.change(input, { target: { value: 'https://example.com/one' } })
     fireEvent.submit(input.closest('form')!)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')).not.toBeNull() })
-    const failedRevision = mounted.store.getSnapshot().byTab[TAB]!.request!.revision
+    const failedFrame = mounted.view.container.querySelector('iframe')!
 
-    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
-    expect(mounted.injected.keyedHooks.browserFrame(TAB)?.getSnapshot().loadFailed).toBe(true)
-    await waitFor(() => { expect(mounted.view.getByText(zh['web.loadFailed'])).toBeDefined() })
+    fireEvent.error(failedFrame)
+    expect(mounted.injected.keyedHooks.browserState(TAB)?.getSnapshot().frame.error).toBeDefined()
+    await waitFor(() => { expect(mounted.view.getByText(zh['load.failed'])).toBeDefined() })
     fireEvent.click(mounted.view.getByRole('button', { name: zh.reload }))
-    await waitFor(() => { expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull() })
-    act(() => { mounted.injected.reportLoadFailed(TAB, failedRevision) })
-    expect(mounted.view.queryByText(zh['web.loadFailed'])).toBeNull()
+    await waitFor(() => { expect(mounted.view.queryByText(zh['load.failed'])).toBeNull() })
+    fireEvent.error(failedFrame)
+    expect(mounted.view.queryByText(zh['load.failed'])).toBeNull()
   })
 
   it('loads loopback under the default sandbox and keeps it across sandbox changes', async () => {
@@ -227,59 +270,6 @@ describe('BrowserBody', () => {
     await waitFor(() => { expect(remounted.container.querySelector('iframe')?.getAttribute('src')).toBe('https://latest.example/path') })
     expect(remounted.getByRole('textbox')).toHaveProperty('value', 'https://latest.example/path')
     expect(mounted.store.getSnapshot().byTab[TAB]?.entries.at(-1)?.url).toBe('https://latest.example/path')
-  })
-
-  it('dispatches sidebar.browser.carrier and renders the native surface in place of the iframe', () => {
-    const seen: { readonly key: unknown; readonly owner: unknown }[] = []
-    let nativeNode: ReactNode = null
-    const store = createBrowserStore().create(`browser-body-native-${String(++mountSequence)}`)
-    const lifetime = new AbortController()
-    lifetimes.add(lifetime)
-    const injected = createBrowserControllers(store.actions)
-    const { keyedHooks, ...commands } = injected
-    const props = {
-      sessionId: SESSION,
-      useSessions: vi.fn(),
-      useResource: vi.fn(),
-      useWorkspaces: vi.fn(),
-      usePanelInfo: vi.fn(),
-      useSessionPendingInteraction: vi.fn(),
-      useTabInfo: () => ({
-        sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' },
-        tab: {
-          id: TAB, kind: 'browser', title: 'Browser', contentId: 'sidebar://browser/native', visible: true,
-          navigation: { address: 'sidebar://browser/native', params: undefined, revision: 0 },
-          signal: lifetime.signal,
-          actions: { openResource: vi.fn(), openTab: vi.fn(), close: vi.fn() },
-        },
-      }),
-      useStore: hookOf(store),
-      actions: store.actions,
-      t: (key: keyof typeof zh, params?: Record<string, unknown>) => params === undefined
-        ? zh[key] : zh[key].replace('{message}', String(params.message)),
-      ...commands,
-      renderSlot: (key: unknown, owner: { bodyProps: Record<string, unknown>; Body: (props: Record<string, unknown>) => ReactNode }) => {
-        seen.push({ key, owner })
-        return owner.Body({ ...owner.bodyProps, native: {
-          url: 'https://native.example/path', error: null, canGoBack: false, canGoForward: true,
-          navigate: () => {}, back: () => {}, forward: () => {}, reload: () => {},
-          content: nativeNode = <div data-testid="native-surface">native</div>,
-        } })
-      },
-      useBrowserFrame: (key: string) => {
-        const frame = keyedHooks.browserFrame(key) ?? absentFrame
-        return useSyncExternalStore(frame.subscribe, frame.getSnapshot)
-      },
-    } as unknown as BrowserBodyProps
-    const view = render(<BrowserBody {...props} />)
-    expect(new Set(seen.map(entry => entry.key))).toEqual(new Set(['sidebar.browser.carrier']))
-    expect(view.queryByRole('textbox')).not.toBeNull()
-    expect(view.container.querySelector('iframe')).toBeNull()
-    expect(view.container.querySelector('[data-testid="native-surface"]')).not.toBeNull()
-    expect(nativeNode).not.toBeNull()
-    expect(view.queryByTitle(zh['sandbox.disable'])).toBeNull()
-    expect(view.getByRole('button', { name: zh.forward }).hasAttribute('disabled')).toBe(false)
-    expect(view.getByRole('button', { name: zh.back }).hasAttribute('disabled')).toBe(true)
   })
 
 })

@@ -77,6 +77,15 @@ export function runnerEnvironment(
       Reflect.deleteProperty(env, name)
     }
   }
+  // Electron hosts must start the private runner in Node mode on every
+  // platform; target env arrives over IPC, so never add this flag to it.
+  if (process.versions.electron !== undefined
+    && (process.platform !== 'win32' || selection === WINDOWS_RUNNER_SELECTION)) {
+    for (const name of Object.keys(env)) {
+      if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE') Reflect.deleteProperty(env, name)
+    }
+    env.ELECTRON_RUN_AS_NODE = '1'
+  }
   return {
     ...env,
     [SUBPROCESS_RUNNER_ENV]: selection,

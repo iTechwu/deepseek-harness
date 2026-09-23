@@ -86,6 +86,9 @@ interface LegacySpec {
   validate?: ((value: unknown) => void) | undefined
 }
 
+/** Historical name of the legacy scope face, still imported by Desktop editions. */
+export type SettingsScope<T = unknown> = LegacySettingsScope<T>
+
 /** Sections of the legacy namespaced provider live in this file under the profile home. */
 const LEGACY_STORE_FILENAME = 'settings-legacy.yaml'
 /** The document the 0.1.7 import renamed away; legacy sections seed from it once. */
@@ -401,7 +404,7 @@ export class SettingsForms extends Service {
    * @param opts - optional cross-field validation, as the old provider took.
    * @returns the legacy scope face.
    */
-  register<const NS extends string, T = unknown>(ns: NS, schema: z<T>, opts?: { validate?: (value: T) => void }): LegacySettingsScope<T> {
+  register<const NS extends string, T = unknown>(ns: NS, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T> {
     if (this.legacySpecs.has(ns)) throw new Error(`Settings namespace "${ns}" is already registered`)
     this.legacySpecs.set(ns, { schema: schema as z<unknown>, validate: opts?.validate as ((value: unknown) => void) | undefined })
     this.legacyValue(ns)

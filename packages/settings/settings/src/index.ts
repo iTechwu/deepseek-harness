@@ -74,7 +74,7 @@ export interface LegacySettingsScope<T> {
   /** Merge a partial edit and persist it. */
   update(patch: Partial<T>): Promise<void>
   /** Reset the section to the supplied values and persist them. */
-  replace?(section: Partial<T>): Promise<void>
+  replace(section: Partial<T>): Promise<void>
   /**
    * Observe accepted changes.
    * @param listener invoked with the values standing after each write.

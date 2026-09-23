@@ -73,6 +73,8 @@ export interface LegacySettingsScope<T> {
   get(): T
   /** Merge a partial edit and persist it. */
   update(patch: Partial<T>): Promise<void>
+  /** Reset the section to the supplied values and persist them. */
+  replace?(section: Partial<T>): Promise<void>
   /**
    * Observe accepted changes.
    * @param listener invoked with the values standing after each write.
@@ -374,6 +376,22 @@ export class SettingsForms extends Service {
     return (spec.schema as unknown as (input: unknown) => unknown)(stored)
   }
 
+  /** Validate and persist one legacy namespace as a whole section. */
+  private async legacyReplace(ns: string, section: Record<string, unknown>): Promise<void> {
+    const spec = this.legacySpecs.get(ns)
+    if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
+    const value = (spec.schema as unknown as (input: unknown) => unknown)(section);
+    (spec.validate as ((value: unknown) => void) | undefined)?.(value)
+    const profile = this.ownerContext.profileContext
+    const document = readLegacyDocument(profile.home)
+    document[ns] = value as Record<string, unknown>
+    writeLegacyDocument(profile.home, document)
+    const revision = (this.legacyRevisions.get(ns) ?? 0) + 1
+    this.legacyRevisions.set(ns, revision)
+    this.ownerContext.emit('settings/updated', ns as SettingsNamespace, value)
+    this.ownerContext.emit('settings/document-updated', ns as SettingsNamespace, revision)
+  }
+
   /** Validate and persist one legacy namespace, then announce the change. */
   private async legacyWrite(ns: string, patch: Record<string, unknown>): Promise<void> {
     const spec = this.legacySpecs.get(ns)
@@ -412,6 +430,7 @@ export class SettingsForms extends Service {
     return {
       get: () => self.legacyValue(ns) as T,
       update: async (patch: Partial<T>) => { await self.legacyWrite(ns, patch as Record<string, unknown>) },
+      replace: async (section: Partial<T>) => { await self.legacyReplace(ns, section as Record<string, unknown>) },
       watch: (listener: (next: T) => void) => {
         const disposer = self.ownerContext.on('settings/updated', (namespace: unknown, next: unknown) => {
           if (String(namespace) !== ns) return

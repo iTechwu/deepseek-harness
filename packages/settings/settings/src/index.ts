@@ -82,7 +82,7 @@ export interface LegacySettingsScope<T> {
 }
 
 interface LegacySpec {
-  schema: z
+  schema: z<unknown>
   validate?: ((value: unknown) => void) | undefined
 }
 
@@ -377,8 +377,8 @@ export class SettingsForms extends Service {
     if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
     const current = this.legacyValue(ns) as Record<string, unknown>
     const merged = cloneJsonShaped({ ...current, ...cloneJsonShaped(patch) })
-    const value = (spec.schema as unknown as (input: unknown) => unknown)(merged)
-    spec.validate?.(value)
+    const value = (spec.schema as unknown as (input: unknown) => unknown)(merged);
+    (spec.validate as ((value: unknown) => void) | undefined)?.(value)
     const profile = this.ownerContext.profileContext
     const document = readLegacyDocument(profile.home)
     document[ns] = value as Record<string, unknown>
@@ -401,9 +401,9 @@ export class SettingsForms extends Service {
    * @param opts - optional cross-field validation, as the old provider took.
    * @returns the legacy scope face.
    */
-  register<T = unknown>(ns: string, schema: z, opts?: { validate?: (value: unknown) => void }): LegacySettingsScope<T> {
+  register<const NS extends string, T = unknown>(ns: NS, schema: z<T>, opts?: { validate?: (value: T) => void }): LegacySettingsScope<T> {
     if (this.legacySpecs.has(ns)) throw new Error(`Settings namespace "${ns}" is already registered`)
-    this.legacySpecs.set(ns, { schema, validate: opts?.validate ?? undefined })
+    this.legacySpecs.set(ns, { schema: schema as z<unknown>, validate: opts?.validate as ((value: unknown) => void) | undefined })
     this.legacyValue(ns)
     const self = this
     return {

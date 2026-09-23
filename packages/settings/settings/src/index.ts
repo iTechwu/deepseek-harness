@@ -1,8 +1,8 @@
 /** Config-schema projection and form edits over Cordis profile patches. */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parse } from 'yaml'
+import { parse, stringify } from 'yaml'
 import { Context, FiberState, Service, resolveConfig, type Fiber } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
@@ -40,6 +40,10 @@ declare module '@deepseek-ai/cordis' {
     /** Schema-derived plugin configuration forms. */
     settings: SettingsForms
   }
+  interface Events {
+    /** A legacy namespaced document was written (Desktop editions). */
+    'settings/updated': (ns: SettingsNamespace, value: unknown) => void
+  }
 }
 /** Refusal to overwrite configuration changed since the form was read. */
 export class SettingsConflictError extends Error {
@@ -61,6 +65,50 @@ export class SettingsConflictError extends Error {
     this.expected = expected
     this.actual = actual
   }
+}
+
+/** Scope shape of the legacy namespaced settings provider (Desktop editions). */
+export interface LegacySettingsScope<T> {
+  /** @returns the validated values standing right now. */
+  get(): T
+  /** Merge a partial edit and persist it. */
+  update(patch: Partial<T>): Promise<void>
+  /**
+   * Observe accepted changes.
+   * @param listener invoked with the values standing after each write.
+   * @returns disposer removing the listener.
+   */
+  watch(listener: (next: T) => void): () => void
+}
+
+interface LegacySpec {
+  schema: z
+  validate?: ((value: unknown) => void) | undefined
+}
+
+/** Sections of the legacy namespaced provider live in this file under the profile home. */
+const LEGACY_STORE_FILENAME = 'settings-legacy.yaml'
+/** The document the 0.1.7 import renamed away; legacy sections seed from it once. */
+const RENAMED_LEGACY_DOCUMENT = 'settings.yaml.imported'
+
+/** Read the legacy store document, tolerating a missing or malformed file. */
+function readLegacyDocument(home: string): Record<string, Record<string, unknown>> {
+  const path = join(home, LEGACY_STORE_FILENAME)
+  if (!existsSync(path)) return {}
+  try {
+    const parsed = parse(readFileSync(path, 'utf8')) as unknown
+    return parsed !== null && typeof parsed === 'object' ? parsed as Record<string, Record<string, unknown>> : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Persist the legacy store document. */
+function writeLegacyDocument(home: string, document: Record<string, Record<string, unknown>>): void {
+  const path = join(home, LEGACY_STORE_FILENAME)
+  const temporary = `${path}.tmp`
+  writeFileSync(temporary, stringify(document))
+  renameSync(temporary, path)
 }
 
 /** Whether a value is a plain data object (not an array, null, or class instance). */
@@ -286,6 +334,99 @@ export class SettingsForms extends Service {
     })
   }
 
+  private legacySpecs = new Map<string, LegacySpec>()
+  private legacyRevisions = new Map<string, number>()
+
+  /** Whether `ns` belongs to the legacy namespaced provider. */
+  private isLegacy(ns: string): boolean {
+    return this.legacySpecs.has(ns)
+  }
+
+  /** Read one legacy namespace, seeding from the renamed import document once. */
+  private legacySection(ns: string): Record<string, unknown> | undefined {
+    const profile = this.ownerContext.profileContext
+    const document = readLegacyDocument(profile.home)
+    const section = document[ns]
+    if (section !== undefined) return section
+    const renamed = join(profile.home, RENAMED_LEGACY_DOCUMENT)
+    if (!existsSync(renamed)) return undefined
+    try {
+      const imported = parse(readFileSync(renamed, 'utf8')) as Record<string, Record<string, unknown>> | null
+      const recovered = imported?.[ns]
+      if (recovered === undefined || typeof recovered !== 'object') return undefined
+      document[ns] = recovered
+      writeLegacyDocument(profile.home, document)
+      return recovered
+    } catch (error) {
+      this.ownerContext.logger.warn('settings: legacy seed for %s failed: %s', ns, error)
+      return undefined
+    }
+  }
+
+  /** Resolve one legacy namespace through its schema (defaults included). */
+  private legacyValue(ns: string): unknown {
+    const spec = this.legacySpecs.get(ns)
+    if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
+    const stored = this.legacySection(ns) ?? {}
+    return (spec.schema as unknown as (input: unknown) => unknown)(stored)
+  }
+
+  /** Validate and persist one legacy namespace, then announce the change. */
+  private async legacyWrite(ns: string, patch: Record<string, unknown>): Promise<void> {
+    const spec = this.legacySpecs.get(ns)
+    if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
+    const current = this.legacyValue(ns) as Record<string, unknown>
+    const merged = cloneJsonShaped({ ...current, ...cloneJsonShaped(patch) })
+    const value = (spec.schema as unknown as (input: unknown) => unknown)(merged)
+    spec.validate?.(value)
+    const profile = this.ownerContext.profileContext
+    const document = readLegacyDocument(profile.home)
+    document[ns] = value as Record<string, unknown>
+    writeLegacyDocument(profile.home, document)
+    const revision = (this.legacyRevisions.get(ns) ?? 0) + 1
+    this.legacyRevisions.set(ns, revision)
+    this.ownerContext.emit('settings/updated', ns as SettingsNamespace, value)
+    this.ownerContext.emit('settings/document-updated', ns as SettingsNamespace, revision)
+  }
+
+  /**
+   * Register a legacy namespaced settings document.
+   *
+   * Restores the 0.1.5-rc.2 provider face for plugins that own a namespaced
+   * document instead of an entry-config form. The section persists under the
+   * profile home, participates in {@link describe}, and accepts edits through
+   * {@link update}/{@link replace}/{@link mutate}.
+   * @param ns - namespace key addressed on the wire and by watches.
+   * @param schema - schema applied on every read and write (defaults included).
+   * @param opts - optional cross-field validation, as the old provider took.
+   * @returns the legacy scope face.
+   */
+  register<T = unknown>(ns: string, schema: z, opts?: { validate?: (value: unknown) => void }): LegacySettingsScope<T> {
+    if (this.legacySpecs.has(ns)) throw new Error(`Settings namespace "${ns}" is already registered`)
+    this.legacySpecs.set(ns, { schema, validate: opts?.validate ?? undefined })
+    this.legacyValue(ns)
+    const self = this
+    return {
+      get: () => self.legacyValue(ns) as T,
+      update: async (patch: Partial<T>) => { await self.legacyWrite(ns, patch as Record<string, unknown>) },
+      watch: (listener: (next: T) => void) => {
+        const disposer = self.ownerContext.on('settings/updated', (namespace: unknown, next: unknown) => {
+          if (String(namespace) !== ns) return
+          listener(next as T)
+        })
+        return () => { disposer() }
+      },
+    }
+  }
+
+  /** Read one namespace: legacy store first, else the entry form's live value. */
+  get(ns: string): unknown {
+    if (this.isLegacy(ns)) return this.legacyValue(ns)
+    const descriptor = this.describe().find(row => row.ns === ns)
+    if (descriptor === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
+    return descriptor.value
+  }
+
   /** Whether the active profile accepts form edits. */
   get writable(): boolean { return true }
   /** Current profile patch shown by the native configuration editor. */
@@ -336,6 +477,25 @@ export class SettingsForms extends Service {
       this.revisions.set(id, { ...previous, raw: undefined, revision })
       this.ownerContext.emit('settings/document-updated', previous.ns, revision)
     }
+    for (const ns of this.legacySpecs.keys()) {
+      const value = this.legacyValue(ns)
+      const schema = this.legacySpecs.get(ns)!.schema
+      const revision = this.legacyRevisions.get(ns) ?? 0
+      const redacted = options?.redactSecrets === true
+        ? redactSecrets(schema as z<never>, value)
+        : undefined
+      descriptors.push({
+        ns: ns as SettingsNamespace,
+        autoGenerate: true,
+        schema: (typeof schema.toJSON === 'function' ? schema.toJSON() : schema) as z<never>,
+        revision,
+        applies: 'live',
+        value: redacted ? redacted.value : value,
+        base: undefined,
+        user: undefined,
+        ...(redacted?.secrets ? { secrets: redacted.secrets } : {}),
+      })
+    }
     return descriptors
   }
 
@@ -345,6 +505,12 @@ export class SettingsForms extends Service {
    * @param expectedRevision Revision returned by describe.
    */
   async update(ns: string, patch: object, expectedRevision?: number): Promise<void> {
+    if (this.isLegacy(ns)) {
+      if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
+        throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
+      }
+      return this.legacyWrite(ns, cloneJsonShaped(patch))
+    }
     const input = cloneJsonShaped(patch)
     await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
   }
@@ -355,6 +521,12 @@ export class SettingsForms extends Service {
    * @param expectedRevision Revision returned by describe.
    */
   async replace(ns: string, section: object, expectedRevision?: number): Promise<void> {
+    if (this.isLegacy(ns)) {
+      if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
+        throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
+      }
+      return this.legacyWrite(ns, cloneJsonShaped(section))
+    }
     const input = cloneJsonShaped(section)
     await this.write(ns, (_current, base) => mergeLayers(base, input) as Record<string, unknown>, expectedRevision)
   }
@@ -365,6 +537,15 @@ export class SettingsForms extends Service {
    * @param expectedRevision Revision returned by describe.
    */
   async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
+    if (this.isLegacy(ns)) {
+      const schema = this.legacySpecs.get(ns)!.schema
+      const current = this.legacyValue(ns) as Record<string, unknown>
+      const next = ops.reduce((value: Record<string, unknown>, op) => applyPathOp(value, op, schema), { ...current })
+      if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
+        throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
+      }
+      return this.legacyWrite(ns, next)
+    }
     await this.write(ns, (current, base, schema) => ops.reduce((value, op) => {
       if (op.op === 'set') return applyPathOp(value, op, schema)
       const parent = op.path.slice(0, -1).reduce<unknown>((node, key) => member(node, key), value)

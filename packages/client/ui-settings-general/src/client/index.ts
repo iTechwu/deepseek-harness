@@ -29,6 +29,7 @@ import type { DesktopUpdateBridge } from '../types.ts'
 import { DesktopUpdateSource } from './desktop-update-source.ts'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
+import { DesktopSection } from './DesktopSection.tsx'
 import { CurrentVersionRow } from './CurrentVersionRow.tsx'
 import { DeveloperToolsRow, type DeveloperToolsRowInjected } from './DeveloperToolsRow.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
@@ -206,4 +207,19 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+  // The Desktop section exists only under the Electron preload carrier: an
+  // ordinary browser has no update story to show, so it registers no row.
+  if (carrier?.protocolVersion === 1) {
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: 'desktop',
+      order: 90,
+      label: () => t('desktop.section.nav'),
+      locale: NS,
+      inject: () => ({
+        openDesktopUpdate: () => { desktopUpdate.open() },
+        hooks: { desktopUpdate: desktopUpdate.store },
+      }),
+    }, DesktopSection))
+  }
 }

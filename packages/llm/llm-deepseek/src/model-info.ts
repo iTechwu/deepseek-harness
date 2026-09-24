@@ -61,7 +61,8 @@ export function modelMaxTokens(model: string, fallback: number): number {
   return GLM_53_MODEL_PATTERN.test(model) ? Math.min(fallback, GLM_53_MAX_TOKENS) : fallback
 }
 
-/** Effective per-request output cap: request value, else the model or connection default, GLM-clamped, bounded by the catalog model's own cap. */
+/** Effective per-request output cap: request value, else the model or connection default,
+ * GLM-clamped, then bounded by the catalog model's own cap. */
 export function resolveRequestMaxTokens(
   model: string,
   requested: number | undefined,

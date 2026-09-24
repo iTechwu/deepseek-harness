@@ -52,7 +52,7 @@ export function createTransport(config: Config, ctx?: Context): Transport {
             ? { fetch: createCredentialFetch(requiredContext(ctx), config.authorizationCredential) }
             : {}),
         },
-      ) as Transport
+      )
   }
 }
 

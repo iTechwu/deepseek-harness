@@ -1,0 +1,7 @@
+.section { display: flex; flex-direction: column; gap: 16px; max-width: 560px; }
+.version { color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.updateRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.updateState { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
+.action { flex: none; padding: 5px 12px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-button-floating-fill); color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; font-size: 13px; line-height: 20px; }
+.action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.action:disabled { color: var(--dsw-alias-label-dimmed); cursor: not-allowed; }

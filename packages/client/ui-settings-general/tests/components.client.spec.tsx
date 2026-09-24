@@ -25,6 +25,7 @@ function derivedDocumentStore(remote: object) {
 import { en, zh } from '../src/client/locales.ts'
 import { CurrentVersionRow } from '../src/client/CurrentVersionRow.tsx'
 import { DesktopUpdateBadge } from '../src/client/DesktopUpdateIndicator.tsx'
+import { DesktopSection } from '../src/client/DesktopSection.tsx'
 import type { DesktopUpdateView } from '../src/types.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllEnvs() })
@@ -244,5 +245,48 @@ describe('current version', () => {
     vi.stubEnv('DSH_CLIENT_VERSION', undefined)
     const view = render(<CurrentVersionRow {...kit} t={t} />)
     expect(view.container.textContent).toBe('')
+  })
+})
+
+describe('desktop section', () => {
+  const localizedT: TriggerContentProps['t'] = (key, params) => {
+    let text = (en as Record<string, string>)[key] ?? key
+    for (const [name, value] of Object.entries(params ?? {})) text = text.replace(`{${name}}`, String(value))
+    return text
+  }
+  function mountSection(view: DesktopUpdateView) {
+    const openDesktopUpdate = vi.fn()
+    const store = createSnapshotStore<DesktopUpdateView>(view)
+    const props = {
+      ...kit,
+      t: localizedT,
+      close: () => {},
+      openDesktopUpdate,
+      hooks: { desktopUpdate: store },
+      useDesktopUpdate: bindSnapshotSelector(store),
+    }
+    return { openDesktopUpdate, ...render(<DesktopSection {...props} />) }
+  }
+
+  it('shows the version, an up-to-date state, and forwards the update action', () => {
+    vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3-rc.4')
+    const { openDesktopUpdate } = mountSection({ failed: false, opening: false })
+    expect(screen.getByText('Current version: 1.2.3-rc.4')).toBeTruthy()
+    expect(screen.getByText('Up to date')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
+    expect(openDesktopUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the ready action while an update waits to install', () => {
+    vi.stubEnv('DSH_CLIENT_VERSION', undefined)
+    mountSection({ failed: false, opening: false, presentation: { phase: 'ready', version: '1.3.0' } })
+    expect(screen.getByRole('button', { name: 'Install and Restart' })).toBeTruthy()
+  })
+
+  it('renders download progress without a manual action while busy', () => {
+    vi.stubEnv('DSH_CLIENT_VERSION', undefined)
+    mountSection({ failed: false, opening: false, presentation: { phase: 'downloading', percent: 42 } })
+    expect(screen.getByText('42%')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })

@@ -174,7 +174,7 @@ export function gateResultFromRun(
       command,
       status: 'skipped',
       exitCode: run?.exitCode ?? null,
-      signal: run === undefined || run.signal === null ? null : run.signal.toString(),
+      signal: run === undefined || run.signal === null ? null : run.signal,
       timedOut: run?.timedOut ?? false,
       aborted: run?.aborted ?? false,
       durationMs,
@@ -190,7 +190,7 @@ export function gateResultFromRun(
     command,
     status,
     exitCode: run.exitCode,
-    signal: run.signal === null ? null : run.signal.toString(),
+    signal: run.signal === null ? null : run.signal,
     timedOut: run.timedOut,
     aborted: run.aborted,
     durationMs,
@@ -219,13 +219,13 @@ export function renderCiRunValue(value: CiRunValue): string {
       const reason = gate.status === 'passed'
         ? 'exit 0'
         : gate.timedOut
-          ? 'timed out after ' + gate.durationMs + 'ms'
+          ? 'timed out after ' + String(gate.durationMs) + 'ms'
           : gate.aborted
             ? 'aborted'
             : gate.signal !== null
               ? 'killed by ' + gate.signal
-              : 'exit ' + gate.exitCode
-      lines.push('- ' + gate.status + ': ' + reason + ', ' + gate.durationMs + 'ms')
+              : 'exit ' + String(gate.exitCode ?? 'unknown')
+      lines.push('- ' + gate.status + ': ' + reason + ', ' + String(gate.durationMs) + 'ms')
     }
     if (gate.stdout.length > 0) lines.push('[stdout]\n' + gate.stdout)
     if (gate.stderr.length > 0) lines.push('[stderr]\n' + gate.stderr)

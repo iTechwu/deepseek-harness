@@ -27,6 +27,14 @@ export interface ProfileContext {
   readonly overlays: readonly PatchOptions[]
   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */
   readonly telemetryDisabledEnv: string | undefined
+  /**
+   * Launcher-owned recomposition: launchers whose composition is not fully
+   * persisted in profile/home patch files (bundled rows, shell/platform
+   * overrides) delegate every persisted-layer read here, so settings writes,
+   * imports, and manager operations reconcile against the same tree the
+   * launcher started. Absent, the persisted layers alone are read.
+   */
+  readonly readPatches?: (profilePatches?: readonly PatchOptions[]) => readonly PatchOptions[]
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -61,6 +69,10 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @returns Detached ordered patches; this function does not update the Loader.
  */
 export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
+  // A launcher that owns non-persisted composition rows must reconcile from its
+  // own recomposition; reading the persisted layers alone would drop those rows
+  // on the first settings write or legacy-document import.
+  if (context.readPatches !== undefined) return structuredClone([...context.readPatches(initialProfile?.patches)])
   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
   const patches = structuredClone([
     ...profile.layers.flatMap(layer => layer.patches),

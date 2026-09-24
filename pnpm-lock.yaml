@@ -9721,8 +9721,6 @@ importers:
         specifier: workspace:*
         version: link:../../interaction/user-approval
 
-  packages/preset/agent-presets: {}
-
   packages/preset/persona:
     dependencies:
       '@deepseek-ai/schemastery':

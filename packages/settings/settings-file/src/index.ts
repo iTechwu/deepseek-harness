@@ -148,17 +148,16 @@ export class FileSettingsProvider extends Service {
   register<T = unknown>(ns: string, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): SettingsScope<T> {
     if (this.scopes.has(ns)) throw new Error(`settings-file: namespace "${ns}" is already registered`)
     const state: ScopeState = {
-      schema: schema as z,
+      schema,
       validate: opts?.validate as ((value: unknown) => void) | undefined,
-      value: (schema as unknown as (raw: unknown) => unknown)(this.sections[ns] ?? {}) as unknown,
+      value: schema(this.sections[ns] as T),
       listeners: new Set(),
     }
     this.scopes.set(ns, state)
-    const self = this
     return {
-      get: () => self.scopeValue(ns) as T,
-      update: async (patch: Partial<T>) => { await self.scopeWrite(ns, patch as Record<string, unknown>, 'update') },
-      replace: async (section: Partial<T>) => { await self.scopeWrite(ns, section as Record<string, unknown>, 'replace') },
+      get: () => this.scopeValue(ns) as T,
+      update: async (patch: Partial<T>) => { await this.scopeWrite(ns, patch, 'update') },
+      replace: async (section: Partial<T>) => { await this.scopeWrite(ns, section, 'replace') },
       watch: (listener: (next: T) => void) => {
         state.listeners.add(listener as (next: unknown) => void)
         return () => { state.listeners.delete(listener as (next: unknown) => void) }

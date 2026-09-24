@@ -123,7 +123,7 @@ describe('presentation', () => {
   })
 
   it('presentCiResult builds a terminal output with exit code', () => {
-    const view = presentCiResult({ cwd: '/r', gates: ['a'] }, { isError: false, content: [], meta: { gates: [{ command: 'a', stdout: 'out', stderr: '', exitCode: 1 }] } } as never)
+    const view = presentCiResult({ cwd: '/r', gates: ['a'] }, { isError: false, content: [], meta: { gates: [{ command: 'a', stdout: 'out', stderr: '', exitCode: 1 }] } })
     expect(view).toMatchObject({ card: 'terminal', exitCode: 1 })
     expect(view?.output).toContain('out')
   })

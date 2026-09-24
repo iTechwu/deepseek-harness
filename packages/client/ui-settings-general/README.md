@@ -43,6 +43,8 @@ The Developer tools switch controls the shared preference described by [ui-setti
 
 The General section holds the built-in Developer tools and Current version rows alongside rows registered into `settings.general.item` by feature packages. Each registrant owns its row copy and behavior. The Appearance row, for example, lives in ui-theme.
 
+The Desktop section appears only under the Electron preload carrier and shares the sidebar badge's update observation: it shows the installed version, the live update phase, and one action that joins the same shell-owned update operation. A plain browser registers no Desktop section.
+
 ### Opening the configuration file
 
 On a loopback browser, the shell renders **Open configuration file** only when the Host confirms that a provider-owned local document can be prepared. The action opens that document in the native text editor (bypassing the browser file association on macOS). Remote browsers never register the action and never issue the privileged settings read.

@@ -373,15 +373,15 @@ export class SettingsForms extends Service {
     const spec = this.legacySpecs.get(ns)
     if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
     const stored = this.legacySection(ns) ?? {}
-    return (spec.schema as unknown as (input: unknown) => unknown)(stored)
+    return spec.schema(stored)
   }
 
   /** Validate and persist one legacy namespace as a whole section. */
-  private async legacyReplace(ns: string, section: Record<string, unknown>): Promise<void> {
+  private legacyReplace(ns: string, section: Record<string, unknown>): void {
     const spec = this.legacySpecs.get(ns)
     if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
-    const value = (spec.schema as unknown as (input: unknown) => unknown)(section);
-    (spec.validate as ((value: unknown) => void) | undefined)?.(value)
+    const value = spec.schema(section)
+    spec.validate?.(value)
     const profile = this.ownerContext.profileContext
     const document = readLegacyDocument(profile.home)
     document[ns] = value as Record<string, unknown>
@@ -393,13 +393,13 @@ export class SettingsForms extends Service {
   }
 
   /** Validate and persist one legacy namespace, then announce the change. */
-  private async legacyWrite(ns: string, patch: Record<string, unknown>): Promise<void> {
+  private legacyWrite(ns: string, patch: Record<string, unknown>): void {
     const spec = this.legacySpecs.get(ns)
     if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
     const current = this.legacyValue(ns) as Record<string, unknown>
     const merged = cloneJsonShaped({ ...current, ...cloneJsonShaped(patch) })
-    const value = (spec.schema as unknown as (input: unknown) => unknown)(merged);
-    (spec.validate as ((value: unknown) => void) | undefined)?.(value)
+    const value = spec.schema(merged)
+    spec.validate?.(value)
     const profile = this.ownerContext.profileContext
     const document = readLegacyDocument(profile.home)
     document[ns] = value as Record<string, unknown>
@@ -422,17 +422,16 @@ export class SettingsForms extends Service {
    * @param opts - optional cross-field validation, as the old provider took.
    * @returns the legacy scope face.
    */
-  register<const NS extends string, T = unknown>(ns: NS, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T> {
+  register<T = unknown>(ns: string, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T> {
     if (this.legacySpecs.has(ns)) throw new Error(`Settings namespace "${ns}" is already registered`)
     this.legacySpecs.set(ns, { schema: schema as z<unknown>, validate: opts?.validate as ((value: unknown) => void) | undefined })
     this.legacyValue(ns)
-    const self = this
     return {
-      get: () => self.legacyValue(ns) as T,
-      update: async (patch: Partial<T>) => { await self.legacyWrite(ns, patch as Record<string, unknown>) },
-      replace: async (section: Partial<T>) => { await self.legacyReplace(ns, section as Record<string, unknown>) },
+      get: () => this.legacyValue(ns) as T,
+      update: (patch: Partial<T>) => { this.legacyWrite(ns, patch); return Promise.resolve() },
+      replace: (section: Partial<T>) => { this.legacyReplace(ns, section); return Promise.resolve() },
       watch: (listener: (next: T) => void) => {
-        const disposer = self.ownerContext.on('settings/updated', (namespace: unknown, next: unknown) => {
+        const disposer = this.ownerContext.on('settings/updated', (namespace: unknown, next: unknown) => {
           if (String(namespace) !== ns) return
           listener(next as T)
         })
@@ -499,9 +498,9 @@ export class SettingsForms extends Service {
       this.revisions.set(id, { ...previous, raw: undefined, revision })
       this.ownerContext.emit('settings/document-updated', previous.ns, revision)
     }
-    for (const ns of this.legacySpecs.keys()) {
+    for (const [ns, spec] of this.legacySpecs.entries()) {
       const value = this.legacyValue(ns)
-      const schema = this.legacySpecs.get(ns)!.schema
+      const schema = spec.schema
       const revision = this.legacyRevisions.get(ns) ?? 0
       const redacted = options?.redactSecrets === true
         ? redactSecrets(schema as z<never>, value)
@@ -531,7 +530,8 @@ export class SettingsForms extends Service {
       if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
         throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
       }
-      return this.legacyWrite(ns, cloneJsonShaped(patch))
+      this.legacyWrite(ns, cloneJsonShaped(patch))
+      return
     }
     const input = cloneJsonShaped(patch)
     await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
@@ -547,7 +547,8 @@ export class SettingsForms extends Service {
       if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
         throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
       }
-      return this.legacyWrite(ns, cloneJsonShaped(section))
+      this.legacyWrite(ns, cloneJsonShaped(section))
+      return
     }
     const input = cloneJsonShaped(section)
     await this.write(ns, (_current, base) => mergeLayers(base, input) as Record<string, unknown>, expectedRevision)
@@ -560,13 +561,16 @@ export class SettingsForms extends Service {
    */
   async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
     if (this.isLegacy(ns)) {
-      const schema = this.legacySpecs.get(ns)!.schema
+      const spec = this.legacySpecs.get(ns)
+      if (spec === undefined) throw new Error(`Settings namespace "${ns}" is not registered`)
+      const schema = spec.schema
       const current = this.legacyValue(ns) as Record<string, unknown>
       const next = ops.reduce((value: Record<string, unknown>, op) => applyPathOp(value, op, schema), { ...current })
       if (expectedRevision !== undefined && (this.legacyRevisions.get(ns) ?? 0) !== expectedRevision) {
         throw new SettingsConflictError(ns as SettingsNamespace, expectedRevision, this.legacyRevisions.get(ns) ?? 0)
       }
-      return this.legacyWrite(ns, next)
+      this.legacyWrite(ns, next)
+      return
     }
     await this.write(ns, (current, base, schema) => ops.reduce((value, op) => {
       if (op.op === 'set') return applyPathOp(value, op, schema)

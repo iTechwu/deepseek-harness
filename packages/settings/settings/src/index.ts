@@ -422,7 +422,7 @@ export class SettingsForms extends Service {
    * @param opts - optional cross-field validation, as the old provider took.
    * @returns the legacy scope face.
    */
-  register<T = unknown>(ns: string, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T> {
+  register<const NS extends string, T = unknown>(ns: NS, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T> {
     if (this.legacySpecs.has(ns)) throw new Error(`Settings namespace "${ns}" is already registered`)
     this.legacySpecs.set(ns, { schema: schema as z<unknown>, validate: opts?.validate as ((value: unknown) => void) | undefined })
     this.legacyValue(ns)

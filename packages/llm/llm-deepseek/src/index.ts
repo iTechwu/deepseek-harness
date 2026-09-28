@@ -3,16 +3,15 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
-import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-fs'
+import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
-import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { DeepSeekAdapter } from './adapter.ts'
+import { registerDeepSeekProvider } from './host.ts'
+import { catalogModelInfo } from './model-info.ts'
 import { Config, plainOptions, resolveAdapterOptions } from './config.ts'
+import type { DeepSeekRequestAuth } from './types.ts'
 import type { ResolvedDeepSeekOptions } from './config.ts'
 
-export { Config, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
+export { deepSeekConfigFields, Config, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
 export type { Options, ResolvedDeepSeekOptions } from './config.ts'
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -28,8 +27,9 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
 } from './defaults.ts'
 export { DeepSeekAdapter } from './adapter.ts'
-export { modelMaxTokens, resolveRequestMaxTokens } from './model-info.ts'
-export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
+export { catalogModelInfo, modelMaxTokens, resolveRequestMaxTokens } from './model-info.ts'
+export { registerDeepSeekProvider } from './host.ts'
+export type { DeepSeekRequestAuth, DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
 export {
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
@@ -64,9 +64,8 @@ export function apply(ctx: Context, config: Config): void {
   // resolve from the composition values captured here.
   let ownedFacts: { apiKeyEnv: string; baseURL?: string } | undefined
   if (config.connectionPolicy === 'composition') {
-    ownedFacts = { apiKeyEnv: config.apiKeyEnv.get() }
     const baseURL = config.baseURL.get()
-    if (baseURL !== undefined) ownedFacts.baseURL = baseURL
+    ownedFacts = { apiKeyEnv: config.apiKeyEnv.get(), ...baseURL === undefined ? {} : { baseURL } }
   }
   const options = (): ResolvedDeepSeekOptions => {
     const plain = plainOptions(config)
@@ -77,10 +76,10 @@ export function apply(ctx: Context, config: Config): void {
   }
   options()
 
-  const resolveApiKey = async (connection: ResolvedDeepSeekOptions): Promise<string> => {
-    // Every credential fact comes from the caller's snapshot, so a rejected
-    // settings generation cannot leak its key onto the previous endpoint.
-    const ref = connection.apiKeyEnv
+  const resolveApiKey = async (): Promise<string> => {
+    // The credential reference resolves per request; composition keeps it
+    // pinned so a rejected settings generation cannot move the endpoint's key.
+    const ref = ownedFacts?.apiKeyEnv ?? config.apiKeyEnv.get()
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)
@@ -100,53 +99,22 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
-  let userId: AnonymousUserId | undefined
-  const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
-  const adapter = new DeepSeekAdapter({
-    options,
-    onReplayDegrade: ({ provider, model, reason }) => {
-      ctx.logger.warn(`llm-deepseek: unusable Messages replay state on assistant history for route "${provider}/${model}"; sending provider-neutral content (${reason})`)
-    },
-    resolveApiKey,
-    resolveAccountToken: connection => ctx.get('deepseekAccount')?.resolveToken(connection.baseURL) ?? Promise.resolve(undefined),
-    resolveUserId,
-    resolveAttachments: () => ctx.get('attachments'),
-    resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
-      attachments,
-      hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
-      ref,
-    ),
-    prepareExtensions: (request) => {
-      const extensions = ctx.get('deepseekLlmApiExtensions')
-      return extensions?.prepare(request)
-        ?? Promise.resolve({ fields: {}, accept: () => Promise.resolve() })
-    },
-  })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: ctx.fiber.entry?.options.id ?? NS, settingsPath: [] },
   ])
-  // Route effects bind to this apply fiber via the stable `ctx` reference,
-  // even when a swap runs inside the scoped settings callback below.
-  const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
-  let registeredPolicy = options().retryPolicy
-  const ensureRegistrationFacts = (): void => {
-    let policy: ResolvedDeepSeekOptions['retryPolicy']
-    try {
-      policy = options().retryPolicy
-    } catch (error) {
-      // A stored config the resolver refuses keeps the current registration; each request fails on its own resolve.
-      ctx.logger.warn(error)
-      return
-    }
-    if (deepEqualJson(policy, registeredPolicy)) return
-    // The registry captures the retry policy at registration, so it is the one
-    // fact per-request resolution cannot refresh. `replace` re-reads it in one
-    // synchronous registry section: disposing and re-registering instead would
-    // publish an empty route set between the two, and an observer that reacted
-    // to it would see this provider disappear and come back.
-    registration.replace([PROVIDER])
-    registeredPolicy = policy
-  }
-
-  ctx.on('loader/volatile-update', ensureRegistrationFacts)
+  // Account sign-in wins per endpoint when the desktop account service can
+  // mint a token; otherwise the route falls back to the API-key credential.
+  registerDeepSeekProvider(ctx, PROVIDER, {
+    options,
+    providerName: 'DeepSeek',
+    resolveAuth: async (connection): Promise<DeepSeekRequestAuth> => {
+      const accountToken = await ctx.get('deepseekAccount')?.resolveToken(connection.baseURL)
+      if (accountToken !== undefined) return { headers: { 'x-dsh-auth-token': accountToken } }
+      return { headers: { 'x-api-key': await resolveApiKey() } }
+    },
+    discoverModels: (provider) => {
+      const connection = options()
+      return Promise.resolve(connection.models.map(model => catalogModelInfo(provider, model)))
+    },
+  })
 }

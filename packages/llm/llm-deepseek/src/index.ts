@@ -1,4 +1,16 @@
-/** DeepSeek Messages transport, request configuration, and model capabilities. */
+/** Register DeepSeek Messages with live configuration and request-local credentials. */
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-deepseek-account'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { Context } from '@deepseek-ai/cordis'
+import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
+import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
+import { registerDeepSeekProvider } from './host.ts'
+import { catalogModelInfo } from './model-info.ts'
+import { Config, plainOptions, resolveAdapterOptions } from './config.ts'
+import type { DeepSeekRequestAuth } from './types.ts'
+import type { ResolvedDeepSeekOptions } from './config.ts'
+
 export { deepSeekConfigFields, Config, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
 export type { Options, ResolvedDeepSeekOptions } from './config.ts'
 export {
@@ -15,7 +27,8 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
 } from './defaults.ts'
 export { DeepSeekAdapter } from './adapter.ts'
-export { modelMaxTokens, resolveRequestMaxTokens } from './model-info.ts'
+export { catalogModelInfo, modelMaxTokens, resolveRequestMaxTokens } from './model-info.ts'
+export { registerDeepSeekProvider } from './host.ts'
 export type { DeepSeekRequestAuth, DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
 export {
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
@@ -38,5 +51,70 @@ export { DeepSeekUploadIndex, deepSeekFileScope } from './upload-index.ts'
 export type { DeepSeekUploadRecord } from './upload-index.ts'
 export type { RequestDefaults } from './types.ts'
 
-export { catalogModelInfo } from './model-info.ts'
-export { registerDeepSeekProvider } from './host.ts'
+export const name = 'llm-deepseek'
+export const inject = ['llm']
+
+const NS = 'llm-deepseek'
+const PROVIDER = 'deepseek-official'
+
+export function apply(ctx: Context, config: Config): void {
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+  // `composition` pins the entry's credential reference and endpoint: settings
+  // updates keep advising every other field, but these two facts always
+  // resolve from the composition values captured here.
+  let ownedFacts: { apiKeyEnv: string; baseURL?: string } | undefined
+  if (config.connectionPolicy === 'composition') {
+    ownedFacts = { apiKeyEnv: config.apiKeyEnv.get(), baseURL: config.baseURL.get() }
+    if (ownedFacts.baseURL === undefined) delete ownedFacts.baseURL
+  }
+  const options = (): ResolvedDeepSeekOptions => {
+    const plain = plainOptions(config)
+    return resolveAdapterOptions(
+      ownedFacts === undefined ? plain : { ...plain, baseURL: ownedFacts.baseURL ?? plain.baseURL },
+      launchEnvironmentOf(ctx),
+    )
+  }
+  options()
+
+  const resolveApiKey = async (): Promise<string> => {
+    // The credential reference resolves per request; composition keeps it
+    // pinned so a rejected settings generation cannot move the endpoint's key.
+    const ref = ownedFacts?.apiKeyEnv ?? config.apiKeyEnv.get()
+    const credentials = ctx.get('credentials')
+    if (credentials !== undefined) {
+      const hit = await credentials.resolve(ref)
+      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-deepseek', ref)
+    } else {
+      // Without the seam there is no managed store to rank against, so the
+      // environment is the whole credential plane.
+      const ambient = launchEnvironmentOf(ctx).get(ref)
+      if (ambient !== undefined && ambient.value.length > 0) {
+        return assertUsableApiKey(ambient.value, 'llm-deepseek', ref)
+      }
+    }
+    throw new LlmError(
+      `llm-deepseek: no API key for provider route "${PROVIDER}"; store ${ref} through the credentials`
+      + ` service (the web Models page writes it), or export ${ref} in the launching environment`,
+      'MISSING_CREDENTIAL',
+    )
+  }
+
+  ctx.llm.registerConfigurableProviders([
+    { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: ctx.fiber.entry?.options.id ?? NS, settingsPath: [] },
+  ])
+  // Account sign-in wins per endpoint when the desktop account service can
+  // mint a token; otherwise the route falls back to the API-key credential.
+  registerDeepSeekProvider(ctx, PROVIDER, {
+    options,
+    providerName: 'DeepSeek',
+    resolveAuth: async (connection): Promise<DeepSeekRequestAuth> => {
+      const accountToken = await ctx.get('deepseekAccount')?.resolveToken(connection.baseURL)
+      if (accountToken !== undefined) return { headers: { 'x-dsh-auth-token': accountToken } }
+      return { headers: { 'x-api-key': await resolveApiKey() } }
+    },
+    discoverModels: (provider) => {
+      const connection = options()
+      return Promise.resolve(connection.models.map(model => catalogModelInfo(provider, model)))
+    },
+  })
+}

@@ -322,11 +322,25 @@ export function claudeQueryOptions(
   ) => void,
   captureDiagnostic: (diagnostic: string) => void,
 ): Options {
+  const parent = scrubbedParentEnv()
+  // The host may itself be a Claude Code session (VS Code extension, nested
+  // agent): its runtime markers (entrypoint, messaging socket, SSE port, task
+  // flags) make the spawned CLI believe it is a nested session and exit
+  // before any query. The child starts clean; the spec's own entries (a
+  // deliberate CLAUDE_CONFIG_DIR, credentials) merge back after the scrub.
+  for (const name of Object.keys(parent)) {
+    if (/^CLAUDE/i.test(name)) Reflect.deleteProperty(parent, name)
+  }
+  const env = { ...parent, ...spec.env }
+  // The distributed Claude Code binary is an Electron app: a host's
+  // Node-mode toggle would make it boot as plain Node and exit before any
+  // query (silently empty runs), so the CLI child never inherits it.
+  delete env.ELECTRON_RUN_AS_NODE
   return {
     abortController: controller,
     cwd: spec.cwd,
     ...spec.model === undefined ? {} : { model: spec.model },
-    env: { ...scrubbedParentEnv(), ...spec.env },
+    env,
     persistSession: false,
     disallowedTools: spec.permissionMode === 'plan'
       ? ['AskUserQuestion', 'ExitPlanMode']

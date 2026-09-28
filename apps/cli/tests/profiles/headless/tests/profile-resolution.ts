@@ -251,8 +251,12 @@ export function testProfileResolution(mode: ExampleMode): void {
           NODE_OPTIONS: undefined, TSX_TSCONFIG_PATH: undefined,
         },
       })
+      // Spawn from the instance's own directory: a developer's repository root
+      // may carry a project `.env` whose bootstrap-only names the env layer
+      // refuses, and profile resolution is driven by the absolute paths and
+      // DSH_HOME above, not by the invoking directory.
       const result = await execa(launch.command, launch.args, {
-        cwd: repoRoot, env: launch.env, input: '', timeout: processTimeoutMs,
+        cwd: root, env: launch.env, input: '', timeout: processTimeoutMs,
         killSignal: 'SIGKILL', reject: false,
       })
       const diagnostic = `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`

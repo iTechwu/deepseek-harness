@@ -37,6 +37,27 @@ Project Config schemas into forms and own optional instance-level UI policy.
  */
 configure(presentation: { auto?: boolean }, owner: Fiber = this.ctx.fiber): () => void
 
+/**
+ * Register a legacy namespaced settings document.
+ *
+ * Restores the 0.1.5-rc.2 provider face for plugins that own a namespaced
+ * document instead of an entry-config form. The section persists under the
+ * profile home, participates in {@link describe}, and accepts edits through
+ * {@link update}/{@link replace}/{@link mutate}.
+ * @param ns - namespace key addressed on the wire and by watches.
+ * @param schema - schema applied on every read and write (defaults included).
+ * @param opts - optional cross-field validation, as the old provider took.
+ * @returns the legacy scope face.
+ */
+register<T = unknown>(ns: string, schema: z<T>, opts?: { applies?: 'live' | 'restart'; validate?: (value: T) => void }): LegacySettingsScope<T>
+
+/**
+ * Read one namespace: legacy store first, else the entry form's live value.
+ * @param ns - The settings namespace to read.
+ * @returns The validated section value, or the entry's live form value.
+ */
+get(ns: string): unknown
+
 /** Locate the profile patch for native editing.
  * @returns The existing profile patch path.
  */
@@ -152,4 +173,23 @@ One profile entry's form values, availability, or page policy changed. Form clie
 ```
 
 Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
+
+<a id="settingsupdated--emit"></a>
+
+#### `settings/updated` — emit
+
+A legacy namespaced document was written (Desktop editions). Emitted at each committed legacy write, after the document has been persisted.
+
+```ts cordis-catalog
+/**
+ * A legacy namespaced document was written (Desktop editions). Emitted at
+ * each committed legacy write, after the document has been persisted.
+ * @mode emit
+ * @param ns - The settings namespace whose legacy document changed.
+ * @param value - The validated section value written for that namespace.
+ */
+'settings/updated': (ns: SettingsNamespace, value: unknown) => void
+```
+
+Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 <!-- END GENERATED cordis-surface -->

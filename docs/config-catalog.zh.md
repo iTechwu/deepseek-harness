@@ -1569,13 +1569,16 @@ export interface Config {
 
 - `inject`: `llm`
 - `refs`: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts) · [`ToolUpdate`](../packages/llm/llm/src/index.ts) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-deepseek/src/config.ts:18`](../packages/llm/llm-deepseek/src/config.ts)
+- `source`: [`packages/llm/llm-deepseek/src/config.ts:113`](../packages/llm/llm-deepseek/src/config.ts)
 
 ```ts config-catalog
-/** Shared Messages request configuration; the desktop combined entry re-adds provider credential selection. */
-export interface Config {
+export interface DesktopEntryConfig extends Config {
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv: Volatile<string>
+}
+
+/** Shared Messages request configuration, without provider credential selection. */
+export interface Config {
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL: Volatile<string | undefined>
   /** Whether settings may replace connection fields; `composition` retains the entry's credential reference and endpoint. */
@@ -1661,8 +1664,8 @@ export interface DeepSeekCatalogModel {
 ## `@deepseek-ai/dsh-llm-deepseek-account`
 
 - `inject`: `llm`
-- `refs`: [`ProtocolConfig`](#deepseek-aidsh-llm-deepseek)
-- `source`: [`packages/llm/llm-deepseek-account/src/config.ts:5`](../packages/llm/llm-deepseek-account/src/config.ts)
+- `refs`: [`ProtocolConfig`](../packages/llm/llm-deepseek/src/index.ts)
+- `source`: [`packages/llm/llm-deepseek-account/src/config.ts:6`](../packages/llm/llm-deepseek-account/src/config.ts)
 
 ```ts config-catalog
 /** Account route configuration; authentication comes exclusively from the account service. */
@@ -1676,7 +1679,7 @@ export type Config = ProtocolConfig
 ## `@deepseek-ai/dsh-llm-deepseek-api-key`
 
 - `inject`: `llm`
-- `refs`: [`ProtocolConfig`](#deepseek-aidsh-llm-deepseek) · `Volatile` (`@deepseek-ai/cordis`)
+- `refs`: [`ProtocolConfig`](../packages/llm/llm-deepseek/src/index.ts) · `Volatile` (`@deepseek-ai/cordis`)
 - `source`: [`packages/llm/llm-deepseek-api-key/src/config.ts:10`](../packages/llm/llm-deepseek-api-key/src/config.ts)
 
 ```ts config-catalog

@@ -105,6 +105,16 @@ export const deepSeekConfigFields = {
 
 export const Config = z.object(deepSeekConfigFields)
 
+/** The desktop combined entry re-adds provider credential selection on top of the shared fields. */
+export const DesktopEntryConfig = z.object({
+  ...deepSeekConfigFields,
+  apiKeyEnv: z.string().role('credential-ref').default('DEEPSEEK_API_KEY').volatile(),
+})
+export interface DesktopEntryConfig extends Config {
+  /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
+  apiKeyEnv: Volatile<string>
+}
+
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
 export const PUBLIC_BASE_URL = 'https://api.deepseek.com/anthropic'
 

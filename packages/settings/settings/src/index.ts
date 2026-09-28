@@ -41,7 +41,13 @@ declare module '@deepseek-ai/cordis' {
     settings: SettingsForms
   }
   interface Events {
-    /** A legacy namespaced document was written (Desktop editions). */
+    /**
+     * A legacy namespaced document was written (Desktop editions). Emitted at
+     * each committed legacy write, after the document has been persisted.
+     * @mode emit
+     * @param ns - The settings namespace whose legacy document changed.
+     * @param value - The validated section value written for that namespace.
+     */
     'settings/updated': (ns: SettingsNamespace, value: unknown) => void
   }
 }
@@ -440,7 +446,11 @@ export class SettingsForms extends Service {
     }
   }
 
-  /** Read one namespace: legacy store first, else the entry form's live value. */
+  /**
+   * Read one namespace: legacy store first, else the entry form's live value.
+   * @param ns - The settings namespace to read.
+   * @returns The validated section value, or the entry's live form value.
+   */
   get(ns: string): unknown {
     if (this.isLegacy(ns)) return this.legacyValue(ns)
     const descriptor = this.describe().find(row => row.ns === ns)

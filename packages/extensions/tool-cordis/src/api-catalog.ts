@@ -1784,6 +1784,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out.',
         parameters: [],
       },
+      {
+        signature: 'readonly readPatches?: (profilePatches?: readonly PatchOptions[]) => readonly PatchOptions[]',
+        description: 'Launcher-owned recomposition: launchers whose composition is not fully persisted in profile/home patch files (bundled rows, shell/platform overrides) delegate every persisted-layer read here, so settings writes, imports, and manager operations reconcile against the same tree the launcher started. Absent, the persisted layers alone are read.',
+        parameters: [],
+      },
     ],
   },
   {
@@ -2501,6 +2506,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'presentation', description: 'Automatic-page policy for this instance; `auto` defaults to true.' }, { name: 'owner', description: 'Plugin instance the policy belongs to; defaults to the calling fiber.' }],
         returns: 'Disposer; register it with the calling plugin\'s effects.',
         throws: ['If this instance already has a registered policy.'],
+      },
+      {
+        signature: 'register<T = unknown>(ns: string, schema: z<T>, opts?: { applies?: \'live\' | \'restart\'; validate?: (value: T) => void }): LegacySettingsScope<T>',
+        description: 'Register a legacy namespaced settings document.\n\nRestores the 0.1.5-rc.2 provider face for plugins that own a namespaced document instead of an entry-config form. The section persists under the profile home, participates in describe, and accepts edits through update/replace/mutate.',
+        parameters: [{ name: 'ns', description: 'namespace key addressed on the wire and by watches.' }, { name: 'schema', description: 'schema applied on every read and write (defaults included).' }, { name: 'opts', description: 'optional cross-field validation, as the old provider took.' }],
+        returns: 'the legacy scope face.',
+      },
+      {
+        signature: 'get(ns: string): unknown',
+        description: 'Read one namespace: legacy store first, else the entry form\'s live value.',
+        parameters: [{ name: 'ns', description: 'The settings namespace to read.' }],
+        returns: 'The validated section value, or the entry\'s live form value.',
       },
       {
         signature: 'prepareDocument(): Promise<string>',
@@ -4196,6 +4213,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'revision', description: 'The entry\'s new revision.' }],
   },
   {
+    name: 'settings/updated',
+    mode: 'emit',
+    signature: '\'settings/updated\': (ns: SettingsNamespace, value: unknown) => void',
+    summary: 'A legacy namespaced document was written (Desktop editions).',
+    description: 'A legacy namespaced document was written (Desktop editions). Emitted at each committed legacy write, after the document has been persisted.',
+    parameters: [{ name: 'ns', description: 'The settings namespace whose legacy document changed.' }, { name: 'value', description: 'The validated section value written for that namespace.' }],
+  },
+  {
     name: 'skills/change',
     mode: 'emit',
     signature: '\'skills/change\'(): void',
@@ -5546,6 +5571,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'LegacySettingsScope',
+    declaration: 'export interface LegacySettingsScope<T> {\n    get(): T;\n    update(patch: Partial<T>): Promise<void>;\n    replace(section: Partial<T>): Promise<void>;\n    watch(listener: (next: T) => void): () => void;\n}',
   },
   {
     name: 'LlmAdapter',

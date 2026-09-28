@@ -6,26 +6,15 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import type { Volatile } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
 import { registerDeepSeekProvider } from './host.ts'
 import { catalogModelInfo } from './model-info.ts'
-import { deepSeekConfigFields, plainOptions, resolveAdapterOptions } from './config.ts'
-import type { Config as ProtocolConfig, ResolvedDeepSeekOptions } from './config.ts'
+import { plainOptions, resolveAdapterOptions } from './config.ts'
+import type { DesktopEntryConfig, ResolvedDeepSeekOptions } from './config.ts'
 import type { DeepSeekRequestAuth } from './types.ts'
 
 export { deepSeekConfigFields, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
+export { DesktopEntryConfig as Config } from './config.ts'
 export type { Options, ResolvedDeepSeekOptions } from './config.ts'
-
-/** The desktop combined entry re-adds provider credential selection on top of the shared protocol fields. */
-export interface Config extends ProtocolConfig {
-  /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
-  apiKeyEnv: Volatile<string>
-}
-export const Config = z.object({
-  ...deepSeekConfigFields,
-  apiKeyEnv: z.string().role('credential-ref').default('DEEPSEEK_API_KEY').volatile(),
-})
 export {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_FILE_EXPIRY_SECONDS,
@@ -70,7 +59,7 @@ export const inject = ['llm']
 const NS = 'llm-deepseek'
 const PROVIDER = 'deepseek-official'
 
-export function apply(ctx: Context, config: Config): void {
+export function apply(ctx: Context, config: DesktopEntryConfig): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   // `composition` pins the entry's credential reference and endpoint: settings
   // updates keep advising every other field, but these two facts always

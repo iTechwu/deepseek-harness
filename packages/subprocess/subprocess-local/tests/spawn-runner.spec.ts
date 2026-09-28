@@ -388,6 +388,10 @@ describe('runner launch inputs', () => {
   })
 
   it('resolves Windows executables with target-cwd and PATH search semantics', () => {
+    // The host may export the Windows cwd-search opt-out (NoDefaultCurrentDirectoryInExePath);
+    // this table pins the search semantics WITH the cwd candidates, so isolate it.
+    const previousNoDefault = process.env.NoDefaultCurrentDirectoryInExePath
+    delete process.env.NoDefaultCurrentDirectoryInExePath
     const probed: string[] = []
     const exists = (candidate: string): boolean => {
       probed.push(candidate)
@@ -459,6 +463,7 @@ describe('runner launch inputs', () => {
     expect(resolveWindowsExecutable(directoryCandidate, '', {})).toBe(`${directoryCandidate}.exe`)
     expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
     expect(resolveWindowsExecutable(missingExecutable, '', {})).toBeUndefined()
+    if (previousNoDefault !== undefined) process.env.NoDefaultCurrentDirectoryInExePath = previousNoDefault
   })
 })
 

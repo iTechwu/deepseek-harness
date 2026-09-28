@@ -443,11 +443,12 @@ describe('render failures', () => {
     expect(bench.reported).toEqual([])
   })
 
-  it('seats a package that registers an unindexable component without claiming it', async () => {
+  it('fails activation for a package that registers an unindexable component, naming the slot', async () => {
     const bench = await boot()
-    // A component that is not an object has no identity to key ownership on; the
-    // registration remains valid, while a crash on it has no attributable package.
-    await expect(bench.runner.load(half({
+    // An erased import that silently resolved to undefined is the React #130
+    // amplifier: the register-time rejection names the slot instead of
+    // deferring the failure to render time behind an error boundary.
+    const outcome = await bench.runner.load(half({
       code: `return {
         inject: ['slots'],
         apply(ctx) {
@@ -455,8 +456,10 @@ describe('render failures', () => {
           ctx.slots.register({ name: 'root' }, null)
         },
       }`,
-    }))).resolves.toEqual({ ok: true, pluginRunId: RUN })
-    for (const entry of bench.slots.entries('root')) bench.crash('root', entry, new Error('boom'))
+    }))
+    expect(outcome).toMatchObject({ ok: false, cause: 'activate' })
+    const failure = outcome.ok === false && outcome.error instanceof Error ? outcome.error.message : ''
+    expect(failure).toContain('slot "root" entry component must be a component function')
     expect(bench.reported).toEqual([])
   })
 

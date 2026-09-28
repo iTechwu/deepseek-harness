@@ -304,7 +304,6 @@ describe('real Claude Agent SDK 0.3.263 and its distributed Claude Code 2.1.263 
     })
     expect(version.stdout.trim()).toBe('2.1.263 (Claude Code)')
 
-    console.error('[repro-spawn]', JSON.stringify(harness.spawnSpecs.map(spec => ({ argv: spec.argv, env: spec.env, cwd: spec.cwd })), null, 1).slice(0, 4000))
     const run = await startRequest(harness, task)
     await expect(run.result).resolves.toEqual({
       output: [{ type: 'text', text: sentinel }],

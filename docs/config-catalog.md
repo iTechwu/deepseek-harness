@@ -1570,8 +1570,10 @@ export interface Config {
 - `source`: [`packages/llm/llm-deepseek/src/config.ts:18`](../packages/llm/llm-deepseek/src/config.ts)
 
 ```ts config-catalog
-/** Shared Messages request configuration, without provider credential selection. */
+/** Shared Messages request configuration; the desktop combined entry re-adds provider credential selection. */
 export interface Config {
+  /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
+  apiKeyEnv: Volatile<string>
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL: Volatile<string | undefined>
   /** Whether settings may replace connection fields; `composition` retains the entry's credential reference and endpoint. */

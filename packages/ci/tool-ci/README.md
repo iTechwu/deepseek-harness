@@ -1,10 +1,23 @@
+---
+description: "The model-facing CI quality-gate tool: run named CI gate commands through the shell seam and return one structured verdict."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-ci
+
+## Summary
 
 English | [中文](README.zh.md)
 
-The model-facing CI quality-gate tool - `ci_run` - over the [shell capability seam](../../shell/shell/README.md) (`ctx.shell`). The package owns model-facing concerns only: the tool name, JSON schema, snake_case arguments, prompt section, per-gate validation, bounded output projection, and the terminal presentation card. Every gate runs through `ctx.shell`, so sandboxing, timeouts, and cancellation stay the shell executor responsibility.
+The model-facing `ci_run` quality-gate tool over the [shell capability seam](../../shell/shell/README.md) (`ctx.shell`). It runs one or more gate commands in sequence in a target directory and returns one structured verdict: an overall result plus a per-gate record with exit code, signal, timeout/abort facts, duration, and a bounded output tail. A failed gate stops the sequence by default. Every gate runs through `ctx.shell`, so sandboxing, timeouts, and cancellation stay the shell executor responsibility; the package owns only model-facing concerns.
 
-`ci_run` runs one or more CI quality-gate commands in sequence in a target directory (for example `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`) and returns one structured result value: an overall verdict plus a per-gate record carrying exit code, terminating signal, timeout and abort facts, duration, and the bounded stdout/stderr tail. A failed gate stops the sequence by default (`stopOnFailure: true`) so the model sees the first failing gate rather than a cascade of unrelated failures.
+## Table of Contents
+
+- [Tool](#tool)
+- [Config](#config)
+- [Stable registration](#stable-registration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
 ## Tool
 
@@ -27,22 +40,32 @@ The `gates` array accepts shell command strings (for example `pnpm lint`) rather
   name: @deepseek-ai/dsh-tool-ci
 ```
 
-## Model Experience
-
-### System prompt
-
-The `ci_run` tool registers a `tool:ci_run` prompt section telling the model to prefer it for multi-gate CI checks when it wants a single structured verdict.
-
-### Output
-
-The canonical value is the programmatic API. The Native renderer folds it into a markdown summary (`CI gate run in <cwd>`, the overall verdict, then one `## <command>` block per gate with its status, reason, duration, and bounded output tail).
-
 ## Stable registration
 
 Tool registration follows enablement, not backend availability: a gate that fails to run is reported as a failed gate in the structured value rather than thrown as an infrastructure error, so the model schema stays stable across provider and executor changes.
+
+## Model Experience
+
+### CI quality-gate verdicts
+
+#### What the model sees
+
+One `ci_run` call returns a single structured verdict: the overall result plus one record per gate with status, reason, duration, and a bounded output tail. The prompt section tells the model to prefer it for multi-gate CI checks.
+
+#### Token effect
+
+Each gate contributes its bounded output tail to the canonical value; `maxOutputChars` caps what enters model context. Skipped gates after a failure contribute nothing.
+
+#### KV Cache effect
+
+The tool adds no persistent session state; the result value enters the transcript like any tool result and follows the session's normal cache rules.
 
 ## Known Limitations and Deferred Work
 
 - `ctx.shell` must be mounted (the bash/pwsh executors supply it); a composition without it cannot load the tool.
 - The tool does not manage long-running background gate batches; each `ci_run` call is a bounded foreground sequence.
 - `maxOutputChars` caps the canonical value, not the executor own capture; a full stream is still recoverable through the underlying `CollectedOutput` spill path when truncation occurs.
+
+### Dev Note
+
+Deferred: background gate batches and a configurable output spill view stay off the roadmap until a deployment asks for them; the shell executor owns any deeper capture policy.

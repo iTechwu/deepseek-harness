@@ -40,6 +40,7 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import * as ToolCi from '@deepseek-ai/dsh-tool-ci'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
@@ -241,6 +242,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(StagehandBrowserTools, {
         mode: 'launch', model: { modelName: 'openai/gpt-5.4-mini', apiKey: 'catalog-placeholder' },
       })
+    },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-ci',
+    dir: 'tool-ci',
+    source: 'packages/ci/tool-ci/src/index.ts',
+    requires: ['ctx.tools', 'ctx.shell', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // Schema harvest never executes a gate; only registration is mounted.
+      ctx.provide('shell', {} as never)
+      await ctx.plugin(ToolCi)
     },
   },
   {

@@ -1,6 +1,46 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/ci/tool-ci/README.md
-README.md: dc2803e6f6fadd72aa3d7d32caddcceb3b65d311
-README.zh.md: b8bf5f53c61e037b64af88155b5c08bfd8784781
+/:
+  en: 07afd4abfef5d542
+  zh: 3473734017337653
+/deepseek-ai-dsh-tool-ci:
+  en: 975e6d7b2fd6867d
+  zh: 975e6d7b2fd6867d
+/deepseek-ai-dsh-tool-ci/summary:
+  en: 45e109d55a7fe355
+  zh: 750a8404c7aae012
+/deepseek-ai-dsh-tool-ci/table-of-contents:
+  en: ff147b9f5532ed99
+  zh: eeb503141005095e
+/deepseek-ai-dsh-tool-ci/tool:
+  en: 866b92049acd791d
+  zh: 99ed551f3507d0f1
+/deepseek-ai-dsh-tool-ci/config:
+  en: 6d42473f135ea0f3
+  zh: 528e42ff8045cbb3
+/deepseek-ai-dsh-tool-ci/stable-registration:
+  en: e71484baed2ad78c
+  zh: 899b6054cf69ef99
+/deepseek-ai-dsh-tool-ci/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-tool-ci/model-experience/ci-quality-gate-verdicts:
+  en: dd1b174abd0c0646
+  zh: d51679a2cb408d9e
+/deepseek-ai-dsh-tool-ci/model-experience/ci-quality-gate-verdicts/what-the-model-sees:
+  en: 1309d08f055f2dc6
+  zh: f056c72eeea76d28
+/deepseek-ai-dsh-tool-ci/model-experience/ci-quality-gate-verdicts/token-effect:
+  en: cbd72faf336be7dc
+  zh: 02d634fe91ae394d
+/deepseek-ai-dsh-tool-ci/model-experience/ci-quality-gate-verdicts/kv-cache-effect:
+  en: 91e4c61d840d3761
+  zh: b68ede56da63388f
+/deepseek-ai-dsh-tool-ci/known-limitations-and-deferred-work:
+  en: 7d5786c236c486f6
+  zh: 43a5153b7cbb4a47
+/deepseek-ai-dsh-tool-ci/known-limitations-and-deferred-work/dev-note:
+  en: f56d392c8483ce1e
+  zh: 95ae439318a63ff6

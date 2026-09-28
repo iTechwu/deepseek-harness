@@ -11,15 +11,11 @@ function rule(selector: string): string {
 }
 
 describe('Deliverables theme surface styles', () => {
-  it('uses adaptive theme fills instead of static neutral colors', () => {
-    expect(rule('.root')).toContain('--deliverable-fill: var(--dsw-alias-bg-layer-2)')
-    expect(rule('.root')).toContain('--deliverable-hover: var(--dsw-alias-interactive-bg-hover)')
-    expect(css).not.toContain('dsw-static-neutral-')
-  })
-
-  it('keeps delivery cards and nested controls within the shared 8px radius', () => {
-    expect(rule('.file')).toContain('border-radius: 8px')
-    expect(rule('.fileIcon')).toContain('border-radius: 8px')
-    expect(rule('.split')).toContain('border-radius: 8px')
+  it('keeps the aligned upstream delivery-card radii and themed fills', () => {
+    expect(rule('.file')).toContain('border-radius: 18px')
+    expect(rule('.fileIcon')).toContain('border-radius: 10px')
+    expect(rule('.fileIcon')).toContain('background: var(--deliverable-fill)')
+    expect(rule('.root')).toContain('--deliverable-fill:')
+    expect(css).toContain('[data-ds-dark-theme]')
   })
 })

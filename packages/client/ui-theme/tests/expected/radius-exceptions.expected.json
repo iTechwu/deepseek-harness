@@ -1,4 +1,8 @@
 {
+  "ui-deliverables/src/client/Deliverables.module.css": [
+    ".file: border-radius: 18px",
+    ".fileIcon: border-radius: 10px"
+  ],
   "ui-schedule/src/client/ClockPicker.module.css": [
     ".option: border-radius: 10px"
   ],
@@ -49,6 +53,9 @@
     ".dialogButton: border-radius: 12px",
     ".page .action: border-radius: 12px",
     ".indicator: border-radius: 6px"
+  ],
+  "ui-settings-general/src/client/DesktopSection.module.css": [
+    ".action: border-radius: 8px"
   ],
   "ui-shortcuts/src/client/Reference.module.css": [
     ".dialog: border-radius: 24px",

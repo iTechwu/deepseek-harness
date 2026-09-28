@@ -6,14 +6,26 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
+import type { Volatile } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { registerDeepSeekProvider } from './host.ts'
 import { catalogModelInfo } from './model-info.ts'
-import { Config, plainOptions, resolveAdapterOptions } from './config.ts'
+import { deepSeekConfigFields, plainOptions, resolveAdapterOptions } from './config.ts'
+import type { Config as ProtocolConfig, ResolvedDeepSeekOptions } from './config.ts'
 import type { DeepSeekRequestAuth } from './types.ts'
-import type { ResolvedDeepSeekOptions } from './config.ts'
 
-export { deepSeekConfigFields, Config, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
+export { deepSeekConfigFields, plainOptions, resolveAdapterOptions, PUBLIC_BASE_URL } from './config.ts'
 export type { Options, ResolvedDeepSeekOptions } from './config.ts'
+
+/** The desktop combined entry re-adds provider credential selection on top of the shared protocol fields. */
+export interface Config extends ProtocolConfig {
+  /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
+  apiKeyEnv: Volatile<string>
+}
+export const Config = z.object({
+  ...deepSeekConfigFields,
+  apiKeyEnv: z.string().role('credential-ref').default('DEEPSEEK_API_KEY').volatile(),
+})
 export {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_FILE_EXPIRY_SECONDS,

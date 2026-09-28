@@ -64,13 +64,13 @@ export function apply(ctx: Context, config: Config): void {
   // resolve from the composition values captured here.
   let ownedFacts: { apiKeyEnv: string; baseURL?: string } | undefined
   if (config.connectionPolicy === 'composition') {
-    ownedFacts = { apiKeyEnv: config.apiKeyEnv.get(), baseURL: config.baseURL.get() }
-    if (ownedFacts.baseURL === undefined) delete ownedFacts.baseURL
+    const baseURL = config.baseURL.get()
+    ownedFacts = { apiKeyEnv: config.apiKeyEnv.get(), ...baseURL === undefined ? {} : { baseURL } }
   }
   const options = (): ResolvedDeepSeekOptions => {
     const plain = plainOptions(config)
     return resolveAdapterOptions(
-      ownedFacts === undefined ? plain : { ...plain, baseURL: ownedFacts.baseURL ?? plain.baseURL },
+      ownedFacts === undefined ? plain : { ...plain, ...ownedFacts },
       launchEnvironmentOf(ctx),
     )
   }

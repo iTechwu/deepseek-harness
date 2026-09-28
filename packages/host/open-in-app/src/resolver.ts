@@ -73,11 +73,19 @@ export type OpenInAppLaunchOutcome = 'launched' | 'missing' | 'failed'
  */
 export const launchDetachedApp: OpenInAppLauncher = (command, args, options) =>
   new Promise((resolve, reject) => {
+    // A desktop Host legitimately runs as Electron in Node mode, so the ambient
+    // ELECTRON_RUN_AS_NODE fact must not reach GUI applications: editors such as
+    // VS Code would boot headless as plain Node. Adapter-supplied env merges
+    // afterwards, so launchers that need Node mode (GitHub Desktop's CLI) keep it.
+    const childEnv: Record<string, string> = {}
+    for (const [key, value] of Object.entries(scrubbedParentEnv())) {
+      if (key.toUpperCase() !== 'ELECTRON_RUN_AS_NODE') childEnv[key] = value
+    }
     const child = spawn(command, [...args], {
       detached: true,
       stdio: 'ignore',
       windowsHide: options.windowsHide,
-      env: { ...scrubbedParentEnv(), ...options.env },
+      env: { ...childEnv, ...options.env },
     })
     let settled = false
     const settle = (outcome: () => void): void => {

@@ -53,4 +53,22 @@ describe('launchDetachedApp watch window', () => {
       vi.useRealTimers()
     }
   })
+
+  it('strips every case variant of the Host Node-mode fact while adapter env survives', () => {
+    vi.stubEnv('ELECTRON_RUN_AS_NODE', '1')
+    vi.stubEnv('electron_run_as_node', '1')
+    const child = new ChildProcess()
+    vi.mocked(spawn).mockReturnValueOnce(child)
+    try {
+      const launched = launchDetachedApp('fixture-app', [], { watchMs: 100, env: { ELECTRON_RUN_AS_NODE: '1' } })
+      child.emit('exit', 0, null)
+      return launched.then(() => {
+        const environment = vi.mocked(spawn).mock.calls[0]![2]!.env as Record<string, string | undefined>
+        expect(Object.keys(environment).filter(key => key.toUpperCase() === 'ELECTRON_RUN_AS_NODE')).toEqual(['ELECTRON_RUN_AS_NODE'])
+      })
+    } finally {
+      child.removeAllListeners()
+      vi.unstubAllEnvs()
+    }
+  })
 })

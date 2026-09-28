@@ -64,6 +64,14 @@ export function useModalLayer(dialog: RefObject<HTMLElement | null>, open: boole
       if (stack.at(-1) !== layer || event.defaultPrevented || composing
         || event.ctrlKey || event.altKey || event.metaKey) return
       if (event.key === 'Escape' && !event.shiftKey) {
+        // The innermost open modal dialog owns the Escape: while the keyboard
+        // sits inside a nested one (foreign dialogs appended without this
+        // primitive included — the aria-modal marker is the contract), the
+        // event reaches this layer only after that dialog declines it.
+        const owner = document.activeElement instanceof Element
+          ? document.activeElement.closest('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]')
+          : null
+        if (owner !== null && owner !== element) return
         event.preventDefault()
         if (!event.repeat) close.current()
       }

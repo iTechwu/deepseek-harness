@@ -14,8 +14,10 @@ import { DEFAULT_MAX_IMAGES_PER_REQUEST, DEFAULT_MAX_REQUEST_FILES_BYTES, DEFAUL
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
 
-/** Shared Messages request configuration, without provider credential selection. */
+/** Shared Messages request configuration; the desktop combined entry re-adds provider credential selection. */
 export interface Config {
+  /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
+  apiKeyEnv: Volatile<string>
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL: Volatile<string | undefined>
   /** Whether settings may replace connection fields; `composition` retains the entry's credential reference and endpoint. */
@@ -103,7 +105,10 @@ export const deepSeekConfigFields = {
   retryPolicy: RetryPolicySchema.volatile(),
 }
 
-export const Config = z.object(deepSeekConfigFields)
+export const Config = z.object({
+  ...deepSeekConfigFields,
+  apiKeyEnv: z.string().role('credential-ref').default('DEEPSEEK_API_KEY').volatile(),
+})
 
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
 export const PUBLIC_BASE_URL = 'https://api.deepseek.com/anthropic'

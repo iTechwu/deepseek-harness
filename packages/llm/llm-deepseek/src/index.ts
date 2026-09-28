@@ -1,5 +1,6 @@
 /** Register DeepSeek Messages with live configuration and request-local credentials. */
 import type {} from '@deepseek-ai/dsh-settings'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-deepseek-account'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { Context } from '@deepseek-ai/cordis'
@@ -79,7 +80,7 @@ export function apply(ctx: Context, config: Config): void {
   const resolveApiKey = async (): Promise<string> => {
     // The credential reference resolves per request; composition keeps it
     // pinned so a rejected settings generation cannot move the endpoint's key.
-    const ref = ownedFacts?.apiKeyEnv ?? config.apiKeyEnv.get()
+    const ref = credentialRef(ownedFacts?.apiKeyEnv ?? config.apiKeyEnv.get())
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)
